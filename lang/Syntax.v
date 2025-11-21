@@ -28,6 +28,8 @@ Module type.
 End type.
 Import type.
 Coercion type_denote: type >-> Sortclass.
+Notation Unit := (Bits 0).
+Notation unit_value := (bv_0 0).
 
 (* TODO: structs & array ops *)
 Module unop.
@@ -100,6 +102,29 @@ Module typeWithHole.
     | PairR t1 t2 => type.Pair t1 (plug t2 t)
     | Array sz _ t' => type.Array (plug t' t) sz
     end.
+
+  Fixpoint fieldUpdate {C: typeWithHole.typeWithHole} {t: type} 
+    (r : type_denote (typeWithHole.plug C t)) (v : type_denote t) 
+    : (type_denote (typeWithHole.plug C t)) :=
+    match C return type_denote (typeWithHole.plug C t) -> (type_denote (typeWithHole.plug C t)) with
+    | typeWithHole.HOLE => fun r => v
+    | typeWithHole.PairL t1 t2 => fun r => (fieldUpdate r.1 v, r.2)
+    | typeWithHole.PairR t1 t2 => fun r => (r.1, fieldUpdate r.2 v)
+    | typeWithHole.Array sz idx t => fun r =>
+         Vector.replace r idx (fieldUpdate (r !!! idx) v)
+    end r.
+
+  Fixpoint getField {C: typeWithHole.typeWithHole} {t: type} 
+    (r : type_denote (typeWithHole.plug C t)) 
+    : type_denote t :=
+    match C return type_denote (typeWithHole.plug C t) -> (type_denote t) with
+    | typeWithHole.HOLE => fun r => r
+    | typeWithHole.PairL t1 _ => fun r => @getField t1 t r.1 
+    | typeWithHole.PairR _ t2 => fun r => @getField t2 t r.2
+    | typeWithHole.Array sz idx t' => fun r =>
+        @getField t' t (r!!! idx)                                      
+    end r.
+
 End typeWithHole.
 
 Module expr.
@@ -117,21 +142,12 @@ Module expr.
     | Binop {t1 t2 tR: type} (op: binop t1 t2 tR) (e1: expr t1) (e2: expr t2) : expr tR
     | ITE {k: type} (cond: expr Bool) (tbranch fbranch: expr k) : expr k
     | LetIn (name_hint: string) {tx: type} (ex: expr tx) {tC: type} (eC: var tx -> expr tC) : expr tC
-    | LetUpdate {C} {te} (e: expr (typeWithHole.plug C te)) (v: expr te): expr (typeWithHole.plug C te).
+    | LetUpdate {C} {te} (e: expr (typeWithHole.plug C te)) (v: expr te): expr (typeWithHole.plug C te)
+    | GetField {C} {t} (e: expr (typeWithHole.plug C t)) : expr t.
 
   End WithSubstitutionType.
 
   Arguments expr : clear implicits.
-  Fixpoint fieldUpdate {C: typeWithHole.typeWithHole} {t: type} 
-    (r : type_denote (typeWithHole.plug C t)) (v : type_denote t) 
-    : (type_denote (typeWithHole.plug C t)) :=
-    match C return type_denote (typeWithHole.plug C t) -> (type_denote (typeWithHole.plug C t)) with
-    | typeWithHole.HOLE => fun r => v
-    | typeWithHole.PairL t1 t2 => fun r => (fieldUpdate r.1 v, r.2)
-    | typeWithHole.PairR t1 t2 => fun r => (r.1, fieldUpdate r.2 v)
-    | typeWithHole.Array sz idx t => fun r => 
-         Vector.replace r idx (fieldUpdate (r !!! idx) v)
-    end r.
 
   Fixpoint interp {t} (e: expr type_denote t) : type_denote t :=
     match e in expr _ t return type_denote t with
@@ -143,9 +159,9 @@ Module expr.
         if interp cond then interp tbranch else interp fbranch
     | LetIn _ _ ex _ eC => let x := interp ex in interp (eC x)
     | LetUpdate _ _ e v => 
-        let interp_e := interp e in 
-        let interp_v := interp v in 
-        fieldUpdate interp_e interp_v 
+        typeWithHole.fieldUpdate (interp e) (interp v)
+    | GetField _ _ e =>
+        typeWithHole.getField (interp e)  
     end.
 
 End expr.
@@ -157,29 +173,60 @@ Module action.
     Context {var: type -> Type}.
 
     Import expr.
-
-    Inductive action : type -> Type :=
-    (* | ReadState   *)
-    (* | Bind (name_hint: string) {tx: type} (ex: expr var tx) {tC: type} (eC: var tx -> action tC) : action tC *)
-    | LetAction (name_hint: string) {tx: type} (x: action tx) {tC: type} (eC: var tx -> action tC) : action tC
-
-    (* | If  *)
-    (* | IfElse (s: string) (p: Expr Bool) k' (t f: Action k') (cont: ty k' -> Action k) *)
-
-    | Return {t: type} (e: expr var t) : action t
+    (* StateUpdate -> similar to LetUpdate except does not take input expr *)
+    (* StateUpdate' -> GetSt, LetUpdate, PutSt *)
+    Inductive action : type -> type -> Type :=
+    | GetSt {env_t} : action env_t env_t
+    | PutSt {env_t} (st: expr var env_t) : action env_t Unit
+    (* | LetNonDet (name_hint: string) {tx: type} {tC: type} (eC: var tx -> action tC) : action tC *)
+    | LetInput {env_t} (name_hint: string) {tx: type} {tC: type} (eC: var tx -> action env_t tC) : action env_t tC
+    | LetAction {env_t} (name_hint: string) {tx: type} (x: action env_t tx) {tC: type} (eC: var tx -> action env_t tC) : action env_t tC
+    | StateUpdate {C} {te} (v: expr var te) : action (typeWithHole.plug C te) Unit
+    | Output {env_t} {te: type} (e: expr var te) : action env_t Unit
+    | MethodCall {C} {te} {tret} {targ} (arg: expr var targ) (fn: var targ -> @action te tret) : action (typeWithHole.plug C te) tret
+    | Return {env_t} {t: type} (e: expr var t) : action env_t t
     .
   End WithSubstitutionType.
 
   Arguments action : clear implicits.
 
-  Definition env_t : Type.
-  Admitted.
+  Section WithState.
+    Let R := Prop.
+    Inductive io_t : Type := 
+    | IOInput (_: {t & type_denote t})
+    | IOOutput (_: {t & type_denote t})
+    .
+   
+    Definition io_trace_t := list io_t.
 
-  (* Fixpoint interp {t} (e: action type_denote t) : type_denote t := *)
-  (*   match e with *)
-  (*   | Return _ e => e *)
-  (*   end. *)
 
+    Fixpoint interp {env_t: type} {t} (e: action type_denote env_t t) (env: type_denote env_t) (ios: io_trace_t)
+      : (type_denote t * type_denote env_t * io_trace_t -> R) -> R :=
+      match e in action _ env_t' t' 
+              return type_denote env_t' -> (type_denote t' * type_denote env_t' * io_trace_t -> R) -> R with
+      | GetSt _ => fun env post => post (env, env, ios)
+      | PutSt _ st => fun env post => post (unit_value, expr.interp st, ios)
+      (* (* | LetNonDet _ tx tC eC => *) *)
+      (* (*     fun post => forall x, interp (eC x) env ios post *) *)
+      | LetAction _ _ tx x tC eC =>
+          fun env post =>
+          interp x env ios (fun '(rX, env', ios') => interp (eC rX) env' ios' post)
+      | LetInput _ _ tx tC eC =>
+          fun env post => forall x,
+          let io : io_t := IOInput (existT _ x) in
+          interp (eC x) env (io::ios) post
+      | Output _ t te => fun env post =>
+          let out_val := expr.interp te in
+          let io : io_t := IOOutput (existT _ out_val) in
+          post (unit_value, env, io::ios)
+      | StateUpdate C te v => fun env post =>
+          post(unit_value, typeWithHole.fieldUpdate env (expr.interp v), ios)
+      | MethodCall C te tret targ arg fn => fun env post =>
+          interp (fn (expr.interp arg)) (typeWithHole.getField env) ios (fun '(r, env', ios') => 
+            post(r, typeWithHole.fieldUpdate env env', ios'))                                        
+      | Return _ _ e => fun env post => post (expr.interp e, env, ios)
+      end env.
+  End WithState.
 End action.
 
 Module example.
@@ -217,7 +264,52 @@ End notations.
 (* Module primBinop. *)
 (* End primBinop. *)
 
+(* Circuit:
+   - Cinput/Cregister 
+   - var input -> Expr   
+   - COutput
+   - CBundle 
+   
+ *)
+
 Module circuitSyntax.
+  Section WithSubstitutionType.
+    Context {var: type -> Type}.
+
+    Fixpoint compile {env_t: type} {ret: type} (a: action.action var env_t ret) 
+                     : var env_t -> expr var (Pair env_t ret).
+    Proof.
+      destruct a; intro env.
+      - (* GetSt *)
+        exact (expr.Binop binop.MkPair (expr.Var env) (expr.Var env)).
+      - exact (expr.Binop binop.MkPair st (@expr.Const _ (Bits 0) unit_value)).
+      - (* LetInput *)
+        admit.
+      - (* LetAction *)
+         pose proof (compile _ _ a env) as X.
+         refine (expr.LetIn name_hint _ _).
+         + exact (expr.Unop unop.Snd X).
+         + intro ret. 
+           refine (expr.LetIn "TODO_FOO" (expr.Unop unop.Fst X) _).
+           intro env'.
+           exact (compile _ _ (eC ret) env').
+      - (* StateUpdate *)
+         refine (expr.Binop binop.MkPair _ (@expr.Const _ (Bits 0) unit_value)).
+         exact (expr.LetUpdate (expr.Var env) v).
+      - (* Output *)
+        (* refine (expr.Binop binop.MkPair _ (@expr.Const _ (Bits 0) unit_value)). *)
+        admit.
+      - (* MethodCall *)
+        refine (expr.LetIn "TODO" arg _).
+        intro arg_interp.
+        refine (expr.LetIn "TODO" (expr.GetField (expr.Var env)) _).
+        intro sub_env.
+        pose proof (compile _ _ (fn arg_interp) sub_env).
+        refine (expr.Binop binop.MkPair _ (expr.Unop unop.Snd X)).
+        refine (expr.LetUpdate (expr.Var env) (expr.Var sub_env)).
+      - (* Return *)
+        exact (expr.Binop binop.MkPair (expr.Var env) e).
+
   (* Local Definition CReg := (string * nat)%type. *)
   (* Section CReg. *)
   (*   Variable x: CReg. *)
