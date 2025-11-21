@@ -1,0 +1,5 @@
+(coq.theory
+ (package quartz)
+ (name quartz.lang)
+ (theories stdpp Ltac2 RecordUpdate)
+)
