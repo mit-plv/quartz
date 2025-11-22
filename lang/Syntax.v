@@ -26,12 +26,13 @@ Module type.
     | Array ty n => vec (type_denote ty) n 
     end.
 End type.
+
 Import type.
 Coercion type_denote: type >-> Sortclass.
 Notation Unit := (Bits 0).
 Notation unit_value := (bv_0 0).
 
-(* TODO: structs & array ops *)
+(* TODO: structs & array ops ; zeroExtend *)
 Module unop.
   Inductive unop : type -> type -> Type :=
   | Not {n} : unop (Bits n) (Bits n)
@@ -44,7 +45,6 @@ Module unop.
     | Fst _ _ => fst 
     | Snd _ _ => snd
     end. 
-
 End unop.
 
 Module binop.
@@ -134,7 +134,7 @@ Module expr.
     Import unop.
     Import binop.
 
-    (* TODO: value method call; let bindings *)
+    (* TODO: value method call *)
     Inductive expr : type -> Type := 
     | Var {tx: type} (x: var tx) : expr tx
     | Const {tc: type} (c: type_denote tc) : expr tc
@@ -173,16 +173,14 @@ Module action.
     Context {var: type -> Type}.
 
     Import expr.
-    (* StateUpdate -> similar to LetUpdate except does not take input expr *)
-    (* StateUpdate' -> GetSt, LetUpdate, PutSt *)
     Inductive action : type -> type -> Type :=
     | GetSt {env_t} : action env_t env_t
     | PutSt {env_t} (st: expr var env_t) : action env_t Unit
     (* | LetNonDet (name_hint: string) {tx: type} {tC: type} (eC: var tx -> action tC) : action tC *)
-    | LetInput {env_t} (name_hint: string) {tx: type} {tC: type} (eC: var tx -> action env_t tC) : action env_t tC
+    (* | LetInput {env_t} (name_hint: string) {tx: type} {tC: type} (eC: var tx -> action env_t tC) : action env_t tC *)
     | LetAction {env_t} (name_hint: string) {tx: type} (x: action env_t tx) {tC: type} (eC: var tx -> action env_t tC) : action env_t tC
     | StateUpdate {C} {te} (v: expr var te) : action (typeWithHole.plug C te) Unit
-    | Output {env_t} {te: type} (e: expr var te) : action env_t Unit
+    (* | Output {env_t} {te: type} (e: expr var te) : action env_t Unit *)
     | MethodCall {C} {te} {tret} {targ} (arg: expr var targ) (fn: var targ -> @action te tret) : action (typeWithHole.plug C te) tret
     | Return {env_t} {t: type} (e: expr var t) : action env_t t
     .
@@ -192,39 +190,38 @@ Module action.
 
   Section WithState.
     Let R := Prop.
-    Inductive io_t : Type := 
-    | IOInput (_: {t & type_denote t})
-    | IOOutput (_: {t & type_denote t})
-    .
+    (* Inductive io_t : Type :=  *)
+    (* | IOInput (_: {t & type_denote t}) *)
+    (* | IOOutput (_: {t & type_denote t}) *)
+    (* . *)
    
-    Definition io_trace_t := list io_t.
+    (* Definition io_trace_t := list io_t. *)
 
-
-    Fixpoint interp {env_t: type} {t} (e: action type_denote env_t t) (env: type_denote env_t) (ios: io_trace_t)
-      : (type_denote t * type_denote env_t * io_trace_t -> R) -> R :=
+    Fixpoint interp {env_t: type} {t} (e: action type_denote env_t t) (env: type_denote env_t) (* (ios: io_trace_t) *)
+      : (type_denote t * type_denote env_t (* * io_trace_t  *)-> R) -> R :=
       match e in action _ env_t' t' 
-              return type_denote env_t' -> (type_denote t' * type_denote env_t' * io_trace_t -> R) -> R with
-      | GetSt _ => fun env post => post (env, env, ios)
-      | PutSt _ st => fun env post => post (unit_value, expr.interp st, ios)
+              return type_denote env_t' -> (type_denote t' * type_denote env_t' (* * io_trace_t  *)-> R) -> R with
+      | GetSt _ => fun env post => post (env, env)
+      | PutSt _ st => fun env post => post (unit_value, expr.interp st)
       (* (* | LetNonDet _ tx tC eC => *) *)
       (* (*     fun post => forall x, interp (eC x) env ios post *) *)
       | LetAction _ _ tx x tC eC =>
           fun env post =>
-          interp x env ios (fun '(rX, env', ios') => interp (eC rX) env' ios' post)
-      | LetInput _ _ tx tC eC =>
-          fun env post => forall x,
-          let io : io_t := IOInput (existT _ x) in
-          interp (eC x) env (io::ios) post
-      | Output _ t te => fun env post =>
-          let out_val := expr.interp te in
-          let io : io_t := IOOutput (existT _ out_val) in
-          post (unit_value, env, io::ios)
+          interp x env (fun '(rX, env') => interp (eC rX) env' post)
+      (* | LetInput _ _ tx tC eC => *)
+      (*     fun env post => forall x, *)
+      (*     let io : io_t := IOInput (existT _ x) in *)
+      (*     interp (eC x) env (io::ios) post *)
+      (* | Output _ t te => fun env post => *)
+      (*     let out_val := expr.interp te in *)
+      (*     let io : io_t := IOOutput (existT _ out_val) in *)
+      (*     post (unit_value, env, io::ios) *)
       | StateUpdate C te v => fun env post =>
-          post(unit_value, typeWithHole.fieldUpdate env (expr.interp v), ios)
+          post(unit_value, typeWithHole.fieldUpdate env (expr.interp v))
       | MethodCall C te tret targ arg fn => fun env post =>
-          interp (fn (expr.interp arg)) (typeWithHole.getField env) ios (fun '(r, env', ios') => 
-            post(r, typeWithHole.fieldUpdate env env', ios'))                                        
-      | Return _ _ e => fun env post => post (expr.interp e, env, ios)
+          interp (fn (expr.interp arg)) (typeWithHole.getField env) (fun '(r, env') => 
+            post(r, typeWithHole.fieldUpdate env env'))                                        
+      | Return _ _ e => fun env post => post (expr.interp e, env)
       end env.
   End WithState.
 End action.
@@ -254,16 +251,6 @@ Module notations.
 
 End notations.
 
-(* Module primUnop. *)
-(*   Inductive unop : N -> N -> Type := *)
-(*   | Not {n} : unop n n *)
-(*   | Slice (sz: N) (offset: N) (width: N) *)
-
-(* End primUnop. *)
-
-(* Module primBinop. *)
-(* End primBinop. *)
-
 (* Circuit:
    - Cinput/Cregister 
    - var input -> Expr   
@@ -277,76 +264,73 @@ Module circuitSyntax.
     Context {var: type -> Type}.
 
     Fixpoint compile {env_t: type} {ret: type} (a: action.action var env_t ret) 
-                     : var env_t -> expr var (Pair env_t ret).
-    Proof.
-      destruct a; intro env.
-      - (* GetSt *)
-        exact (expr.Binop binop.MkPair (expr.Var env) (expr.Var env)).
-      - exact (expr.Binop binop.MkPair st (@expr.Const _ (Bits 0) unit_value)).
-      - (* LetInput *)
-        admit.
-      - (* LetAction *)
-         pose proof (compile _ _ a env) as X.
-         refine (expr.LetIn name_hint _ _).
-         + exact (expr.Unop unop.Snd X).
-         + intro ret. 
-           refine (expr.LetIn "TODO_FOO" (expr.Unop unop.Fst X) _).
-           intro env'.
-           exact (compile _ _ (eC ret) env').
-      - (* StateUpdate *)
-         refine (expr.Binop binop.MkPair _ (@expr.Const _ (Bits 0) unit_value)).
-         exact (expr.LetUpdate (expr.Var env) v).
-      - (* Output *)
-        (* refine (expr.Binop binop.MkPair _ (@expr.Const _ (Bits 0) unit_value)). *)
-        admit.
-      - (* MethodCall *)
-        refine (expr.LetIn "TODO" arg _).
-        intro arg_interp.
-        refine (expr.LetIn "TODO" (expr.GetField (expr.Var env)) _).
-        intro sub_env.
-        pose proof (compile _ _ (fn arg_interp) sub_env).
-        refine (expr.Binop binop.MkPair _ (expr.Unop unop.Snd X)).
-        refine (expr.LetUpdate (expr.Var env) (expr.Var sub_env)).
-      - (* Return *)
-        exact (expr.Binop binop.MkPair (expr.Var env) e).
-
-  (* Local Definition CReg := (string * nat)%type. *)
-  (* Section CReg. *)
-  (*   Variable x: CReg. *)
-  (*   Local Definition cRegName: string := fst x. *)
-  (*   Local Definition cRegPos: nat := snd x. *)
-  (* End CReg. *)
-
-  (* Local Definition CTmp := (string * nat)%type. *)
-  (* Section CTmp. *)
-  (*   Variable x: CTmp. *)
-  (*   Local Definition cTmpName: string := fst x. *)
-  (*   Local Definition cTmpIdx: nat := snd x. *)
-  (* End CTmp. *)
-
-  Section WithContext.
-    Inductive circuit: N -> Type := .
-    (* | CReadReg (x: CReg) (t: type) *)
-
-    (* | CMux {sz} (select: circuit 1) (c1 c2: circuit sz) : circuit sz *)
-    (* | CConst {sz} (cst: bv sz) : circuit sz *)
-    (* | CReadRegister (reg: reg_t) : circuit (CR reg). *)
-  End WithContext.
-
+                     : (var env_t -> expr var (Pair env_t ret)) :=
+      match a in (action.action _ env_t' ret') return (var env_t' -> expr var (Pair env_t' ret')) with
+      | action.GetSt _ => fun env => 
+          expr.Binop binop.MkPair (expr.Var env) (expr.Var env)
+      | action.PutSt _ env' => fun env => 
+          expr.Binop binop.MkPair env' (@expr.Const _ (Bits 0) unit_value)
+      | action.LetAction _ name_hint  _ ax _ cont => fun env => 
+          expr.LetIn name_hint (@compile _ _ ax env) (fun x => 
+          expr.LetIn (name_hint ++ "#env") (expr.Unop unop.Fst (expr.Var x)) (fun env' => 
+          expr.LetIn (name_hint ++ "#ret") (expr.Unop unop.Snd (expr.Var x)) (fun ret => 
+          @compile _ _ (cont ret) env')))                                              
+      | action.StateUpdate C te exp => fun env => 
+          expr.Binop binop.MkPair (expr.LetUpdate (expr.Var env) exp) 
+                                  (@expr.Const _ (Bits 0) unit_value) 
+      | action.MethodCall C te tret targ arg cont => fun env =>
+          expr.LetIn "TODO_name_hint" arg (fun arg_expr =>
+          expr.LetIn "TODO_field" (expr.GetField (expr.Var env)) (fun sub_env =>
+          expr.LetIn "TODO_subExpr" (@compile _ _ (cont arg_expr) sub_env) (fun sub_env'_and_ret => 
+          let sub_env' := (expr.Unop unop.Fst (expr.Var sub_env'_and_ret)) in
+          let ret := (expr.Unop unop.Snd (expr.Var sub_env'_and_ret)) in 
+          expr.Binop binop.MkPair (expr.LetUpdate (expr.Var env) sub_env') ret
+          )))
+      | action.Return _ _ exp => fun env => expr.Binop binop.MkPair (expr.Var env) exp
+      end.  
+  End WithSubstitutionType.
 End circuitSyntax.
 
-Module compiler.
-  Import circuitSyntax.
-End compiler.
+Module exampleBlinky.
+  Notation width := 27%N.
+  Section WithSubstitutionType.
+    Context {var: type -> Type}.
 
-(* Global Instance type_eq_dec : EqDecision type. *)
-(* Proof. solve_decision. Defined. *)
+    Definition env_t : type := (Bits width).
+    Import action.
+    Definition blinkyCtr (arg: var (Bits width)) : action var env_t Bool :=
+      LetAction "st" GetSt (fun st =>
+      LetAction "_" (PutSt (expr.Binop binop.Plus 
+                              (expr.Var st) 
+                              (expr.Binop binop.Plus
+                                          (@expr.Const _ (Bits width) (Z_to_bv _ 1))
+                                          (expr.Var arg)
+                              )
+                           )) (fun _ =>
+      Return (expr.Binop (binop.Compare false binop.cGt) 
+                         (expr.Var st) 
+                         (@expr.Const _ (Bits width) (Z_to_bv _ (2^26)%Z))))).
 
-(* Global Instance EqDecision_type_denote {tau: type} : EqDecision (type_denote tau). *)
-(* Proof. *)
-(*   unfold EqDecision. revert tau. *)
-(*   fix eq_dec_td 1. *)
-(*   destruct tau; cbn; try solve_decision. *)
-(*   eapply @vec_dec. *)
-(*   solve_decision. *)
-(* Defined. *)
+    Example blinkyCtrCircuit (arg: var (Bits width)) := circuitSyntax.compile (blinkyCtr arg). 
+    Eval cbv in blinkyCtrCircuit.
+
+  End WithSubstitutionType.
+
+  Example blinkyCtrInterp (st: type_denote env_t) (arg: type_denote (Bits width)) 
+    : action.interp (blinkyCtr arg) st (fun res => Some res = None).
+  Proof.
+    cbn.
+  Abort.
+
+End exampleBlinky.
+
+(* NEXT STEPS:
+   - Verilog
+     - Expr -> always_comb verilog blocks
+   - Notations :) --> customEntry fun 
+   - Pretty Gallina reflection/verification stuffs
+     - Reification of lvalues/holes
+       - Ltac2 silliness
+   - Test on module+nested module
+*)
+
