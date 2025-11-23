@@ -189,25 +189,18 @@ Module action.
   Arguments action : clear implicits.
 
   Section WithState.
-    Let R := Prop.
-    (* Inductive io_t : Type :=  *)
-    (* | IOInput (_: {t & type_denote t}) *)
-    (* | IOOutput (_: {t & type_denote t}) *)
-    (* . *)
-   
-    (* Definition io_trace_t := list io_t. *)
-
-    Fixpoint interp {env_t: type} {t} (e: action type_denote env_t t) (env: type_denote env_t) (* (ios: io_trace_t) *)
-      : (type_denote t * type_denote env_t (* * io_trace_t  *)-> R) -> R :=
+    Fixpoint interp {env_t: type} {t} (e: action type_denote env_t t) (env: type_denote env_t) 
+      : type_denote t * type_denote env_t :=
       match e in action _ env_t' t' 
-              return type_denote env_t' -> (type_denote t' * type_denote env_t' (* * io_trace_t  *)-> R) -> R with
-      | GetSt _ => fun env post => post (env, env)
-      | PutSt _ st => fun env post => post (unit_value, expr.interp st)
+              return type_denote env_t' -> (type_denote t' * type_denote env_t')  with
+      | GetSt _ => fun env => (env, env)
+      | PutSt _ st => fun env => (unit_value, expr.interp st)
       (* (* | LetNonDet _ tx tC eC => *) *)
       (* (*     fun post => forall x, interp (eC x) env ios post *) *)
       | LetAction _ _ tx x tC eC =>
-          fun env post =>
-          interp x env (fun '(rX, env') => interp (eC rX) env' post)
+          fun env =>
+          let '(rX, env') := interp x env in
+          interp (eC rX) env'
       (* | LetInput _ _ tx tC eC => *)
       (*     fun env post => forall x, *)
       (*     let io : io_t := IOInput (existT _ x) in *)
@@ -216,12 +209,12 @@ Module action.
       (*     let out_val := expr.interp te in *)
       (*     let io : io_t := IOOutput (existT _ out_val) in *)
       (*     post (unit_value, env, io::ios) *)
-      | StateUpdate C te v => fun env post =>
-          post(unit_value, typeWithHole.fieldUpdate env (expr.interp v))
-      | MethodCall C te tret targ arg fn => fun env post =>
-          interp (fn (expr.interp arg)) (typeWithHole.getField env) (fun '(r, env') => 
-            post(r, typeWithHole.fieldUpdate env env'))                                        
-      | Return _ _ e => fun env post => post (expr.interp e, env)
+      | StateUpdate C te v => fun env =>
+          (unit_value, typeWithHole.fieldUpdate env (expr.interp v))
+      | MethodCall C te tret targ arg fn => fun env =>
+          let '(r, env') := interp (fn (expr.interp arg)) (typeWithHole.getField env) in
+          (r, typeWithHole.fieldUpdate env env')
+      | Return _ _ e => fun env => (expr.interp e, env)
       end env.
   End WithState.
 End action.
@@ -264,31 +257,42 @@ Module circuitSyntax.
     Context {var: type -> Type}.
 
     Fixpoint compile {env_t: type} {ret: type} (a: action.action var env_t ret) 
-                     : (var env_t -> expr var (Pair env_t ret)) :=
-      match a in (action.action _ env_t' ret') return (var env_t' -> expr var (Pair env_t' ret')) with
+                     : (var env_t -> expr var (Pair ret env_t)) :=
+      (match a in (action.action _ env_t' ret') return (var env_t' -> expr var (Pair ret' env_t')) with
       | action.GetSt _ => fun env => 
           expr.Binop binop.MkPair (expr.Var env) (expr.Var env)
       | action.PutSt _ env' => fun env => 
-          expr.Binop binop.MkPair env' (@expr.Const _ (Bits 0) unit_value)
+          expr.Binop binop.MkPair (@expr.Const _ (Bits 0) unit_value) env'
       | action.LetAction _ name_hint  _ ax _ cont => fun env => 
           expr.LetIn name_hint (@compile _ _ ax env) (fun x => 
-          expr.LetIn (name_hint ++ "#env") (expr.Unop unop.Fst (expr.Var x)) (fun env' => 
-          expr.LetIn (name_hint ++ "#ret") (expr.Unop unop.Snd (expr.Var x)) (fun ret => 
+          expr.LetIn (name_hint ++ "#env") (expr.Unop unop.Snd (expr.Var x)) (fun env' => 
+          expr.LetIn (name_hint ++ "#ret") (expr.Unop unop.Fst (expr.Var x)) (fun ret => 
           @compile _ _ (cont ret) env')))                                              
       | action.StateUpdate C te exp => fun env => 
-          expr.Binop binop.MkPair (expr.LetUpdate (expr.Var env) exp) 
-                                  (@expr.Const _ (Bits 0) unit_value) 
+          expr.Binop binop.MkPair (@expr.Const _ (Bits 0) unit_value)
+                                  (expr.LetUpdate (expr.Var env) exp)
       | action.MethodCall C te tret targ arg cont => fun env =>
           expr.LetIn "TODO_name_hint" arg (fun arg_expr =>
           expr.LetIn "TODO_field" (expr.GetField (expr.Var env)) (fun sub_env =>
           expr.LetIn "TODO_subExpr" (@compile _ _ (cont arg_expr) sub_env) (fun sub_env'_and_ret => 
-          let sub_env' := (expr.Unop unop.Fst (expr.Var sub_env'_and_ret)) in
-          let ret := (expr.Unop unop.Snd (expr.Var sub_env'_and_ret)) in 
-          expr.Binop binop.MkPair (expr.LetUpdate (expr.Var env) sub_env') ret
+          let sub_env' := (expr.Unop unop.Snd (expr.Var sub_env'_and_ret)) in
+          let ret := (expr.Unop unop.Fst (expr.Var sub_env'_and_ret)) in 
+          expr.Binop binop.MkPair ret (expr.LetUpdate (expr.Var env) sub_env') 
           )))
-      | action.Return _ _ exp => fun env => expr.Binop binop.MkPair (expr.Var env) exp
-      end.  
+      | action.Return _ _ exp => fun env => expr.Binop binop.MkPair exp (expr.Var env) 
+      end).  
   End WithSubstitutionType.
+
+  Theorem correct:
+    forall env_t ret (a: action.action type_denote env_t ret) (env: env_t),
+      expr.interp (compile a env) = action.interp a env.
+  Proof.
+    (* TODO: Fix proof. *)
+    induction a; intros; cbn; auto.
+    - intros. rewrite IHa. rewrite H. case_match; auto.
+    - intros. case_match. rewrite H. rewrite H0. auto.
+  Qed.
+
 End circuitSyntax.
 
 Module exampleBlinky.
@@ -317,7 +321,7 @@ Module exampleBlinky.
   End WithSubstitutionType.
 
   Example blinkyCtrInterp (st: type_denote env_t) (arg: type_denote (Bits width)) 
-    : action.interp (blinkyCtr arg) st (fun res => Some res = None).
+    : Some (action.interp (blinkyCtr arg) st) = None.
   Proof.
     cbn.
   Abort.
