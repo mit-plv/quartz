@@ -295,6 +295,9 @@ Module circuitSyntax.
 
 End circuitSyntax.
 
+Print LoadPath.
+From quartz Require VerilogSyntax.
+
 Module exampleBlinky.
   Notation width := 27%N.
   Section WithSubstitutionType.

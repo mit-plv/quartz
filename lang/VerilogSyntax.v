@@ -4,7 +4,6 @@
 
 Require Import Coq.ZArith.BinInt Coq.Lists.List.
 Local Open Scope Z.
-From Quartz Require VerilogSyntax.
 
 Declare Custom Entry verilog_top.
 Declare Custom Entry verilog_module.
