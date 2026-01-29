@@ -1,3 +1,5 @@
+From quartz Require VerilogSyntax.
+
 From stdpp Require Import base bitvector vector.
 From Stdlib Require Import 
   List 
@@ -15,7 +17,7 @@ Module type.
   Inductive type :=
   | Bool
   | Bits (sz: N)
-  | Pair (t1 t2: type)
+  | Pair (t1 t2: type) (* TODO: name hint for struct fields?*)
   | Array (t: type) (sz: nat).
   
   Fixpoint type_denote tau : Type :=
@@ -46,6 +48,7 @@ Module unop.
     | Snd _ _ => snd
     end. 
 End unop.
+Notation unop := unop.unop (only parsing).
 
 Module binop.
 
@@ -87,6 +90,7 @@ Module binop.
     | MkPair _ _ => Datatypes.pair
     end. 
 End binop.
+Notation binop := binop.binop (only parsing).
 
 Module typeWithHole.
   Inductive typeWithHole :=
@@ -131,9 +135,6 @@ Module expr.
   Section WithSubstitutionType.
     Context {var: type -> Type}.
 
-    Import unop.
-    Import binop.
-
     (* TODO: value method call *)
     Inductive expr : type -> Type := 
     | Var {tx: type} (x: var tx) : expr tx
@@ -142,7 +143,7 @@ Module expr.
     | Binop {t1 t2 tR: type} (op: binop t1 t2 tR) (e1: expr t1) (e2: expr t2) : expr tR
     | ITE {k: type} (cond: expr Bool) (tbranch fbranch: expr k) : expr k
     | LetIn (name_hint: string) {tx: type} (ex: expr tx) {tC: type} (eC: var tx -> expr tC) : expr tC
-    | LetUpdate {C} {te} (e: expr (typeWithHole.plug C te)) (v: expr te): expr (typeWithHole.plug C te)
+    | SetField {C} {te} (e: expr (typeWithHole.plug C te)) (v: expr te): expr (typeWithHole.plug C te)
     | GetField {C} {t} (e: expr (typeWithHole.plug C t)) : expr t.
 
   End WithSubstitutionType.
@@ -158,7 +159,7 @@ Module expr.
     | ITE _ cond tbranch fbranch => 
         if interp cond then interp tbranch else interp fbranch
     | LetIn _ _ ex _ eC => let x := interp ex in interp (eC x)
-    | LetUpdate _ _ e v => 
+    | SetField _ _ e v => 
         typeWithHole.fieldUpdate (interp e) (interp v)
     | GetField _ _ e =>
         typeWithHole.getField (interp e)  
@@ -252,15 +253,33 @@ End notations.
    
  *)
 
-Module circuitSyntax.
+Module flat.
   Section WithSubstitutionType.
     Context {var: type -> Type}.
+    Inductive expr : type -> Type := 
+    | Var {tx: type} (x: var tx) : expr tx
+    | Const {tc: type} (c: type_denote tc) : expr tc
+    | Unop {t1 tR: type} (op: unop t1 tR) (e1: expr t1) : expr tR
+    | Binop {t1 t2 tR: type} (op: binop t1 t2 tR) (e1: expr t1) (e2: expr t2) : expr tR
+    | ITE {k: type} (cond: expr Bool) (tbranch fbranch: expr k) : expr k
+    | GetField {C} {t} (e: expr (typeWithHole.plug C t)) : expr t.
+
+    (* see UnderLets in mit-plv/rewriter *)
+    Inductive underlets (T : Type) :=
+    | LetIn (name_hint: string) {tx: type} (ex: expr tx) (eC: var tx -> underlets T)
+    | LetUpdate {C} {te} (e: expr (typeWithHole.plug C te)) (v: expr te) (eC : var (typeWithHole.plug C te) -> underlets T)
+    | Ret (_ : T).
 
     Fixpoint compile {env_t: type} {ret: type} (a: action.action var env_t ret) 
-                     : (var env_t -> expr var (Pair ret env_t)) :=
-      (match a in (action.action _ env_t' ret') return (var env_t' -> expr var (Pair ret' env_t')) with
+      : (var env_t -> underlets (var env_t * expr ret)).
+      refine
+      match a in (action.action _ env_t' ret') return (var env_t' -> underlets (var env_t' * expr ret')) with
       | action.GetSt _ => fun env => 
-          expr.Binop binop.MkPair (expr.Var env) (expr.Var env)
+        Ret (env, Var env)
+      | _ => _ end.
+    Abort.
+
+    (*
       | action.PutSt _ env' => fun env => 
           expr.Binop binop.MkPair (@expr.Const _ (Bits 0) unit_value) env'
       | action.LetAction _ name_hint  _ ax _ cont => fun env => 
@@ -280,8 +299,7 @@ Module circuitSyntax.
           expr.Binop binop.MkPair ret (expr.LetUpdate (expr.Var env) sub_env') 
           )))
       | action.Return _ _ exp => fun env => expr.Binop binop.MkPair exp (expr.Var env) 
-      end).  
-  End WithSubstitutionType.
+      end.
 
   Theorem correct:
     forall env_t ret (a: action.action type_denote env_t ret) (env: env_t),
@@ -292,11 +310,45 @@ Module circuitSyntax.
     - intros. rewrite IHa. rewrite H. case_match; auto.
     - intros. case_match. rewrite H. rewrite H0. auto.
   Qed.
+     *)
+  End WithSubstitutionType.
+  #[global] Arguments expr : clear implicits.
+  #[global] Arguments underlets : clear implicits.
+End flat.
 
-End circuitSyntax.
+Module verilog.
+  Import (notations)ListNotations.
+  Import -(notations,options)VerilogSyntax.
+  Import flat.
+  Local Unset Asymmetric Patterns.
+  Section WithVerilogIdentifier.
+    Context {VId : Set}.
+    Context {gensym_state : Type} (gensym : gensym_state -> string -> VId * gensym_state).
+    Let var (_ : type) := VId.
+
+    Fixpoint expr {t} (e : expr var t) : @VExpr VId.
+    refine
+      match e with
+      | Var x => VExprId x
+      | ITE c t f => VExprCond (@expr _ c) (@expr _ t) (@expr _ f)
+      | _ => ltac:(admit)
+      end.
+    Admitted.
+
+    Fixpoint stmt {t} (s : underlets var (flat.expr var t)) (g : gensym_state) : list (@VStatementItem VId).
+    refine
+      match s with
+      | LetIn x ex eC =>
+          let '(x, g) := gensym g x in
+          VStatementItemBlockingAssignNormal (VExprId x) (expr ex) ::
+          @stmt _ (eC x) g
+      | _ => ltac:(admit)
+      end.
+    Abort.
+  End WithVerilogIdentifier.
+End verilog.
 
 Print LoadPath.
-From quartz Require VerilogSyntax.
 
 Module exampleBlinky.
   Notation width := 27%N.
@@ -318,8 +370,10 @@ Module exampleBlinky.
                          (expr.Var st) 
                          (@expr.Const _ (Bits width) (Z_to_bv _ (2^26)%Z))))).
 
+    (*
     Example blinkyCtrCircuit (arg: var (Bits width)) := circuitSyntax.compile (blinkyCtr arg). 
     Eval cbv in blinkyCtrCircuit.
+     *)
 
   End WithSubstitutionType.
 
