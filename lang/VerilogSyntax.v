@@ -1,31 +1,32 @@
 (* COPYRIGHT LICENSE: CC-BY 4.0 from https://zenodo.org/records/16923443 *)
 (* CONTRIBUTOR CREDITS: Choi, Joonwon; Kim, Jaewoo; Kang, Jeehoon *)
+(* Modified for use in Quartz; modifications dual-licensed MIT + CC-BY-4.0 *)
 
 Require Import Coq.ZArith.BinInt Coq.Lists.List.
 Local Open Scope Z.
+From Quartz Require VerilogSyntax.
 
-Declare Custom Entry ce_top.
-Declare Custom Entry ce_module.
-Declare Custom Entry ce_gen.
-Declare Custom Entry ce_paramports.
-Declare Custom Entry ce_ports.
-Declare Custom Entry ce_stmt.
+Declare Custom Entry verilog_top.
+Declare Custom Entry verilog_module.
+Declare Custom Entry verilog_gen.
+Declare Custom Entry verilog_paramports.
+Declare Custom Entry verilog_ports.
+Declare Custom Entry verilog_stmt.
 
-Declare Custom Entry ce_assign.
-Declare Custom Entry ce_netdeclassign.
-Declare Custom Entry ce_vardeclassign.
-Declare Custom Entry ce_paramassign.
-Declare Custom Entry ce_blockingassign.
+Declare Custom Entry verilog_assign.
+Declare Custom Entry verilog_netdeclassign.
+Declare Custom Entry verilog_vardeclassign.
+Declare Custom Entry verilog_paramassign.
+Declare Custom Entry verilog_blockingassign.
 
-Declare Custom Entry ce_portconn.
-Declare Custom Entry ce_portconnid.
-Declare Custom Entry ce_packeddim.
-Declare Custom Entry ce_pexpr.
-Declare Custom Entry ce_expr.
-Declare Custom Entry ce_lit.
+Declare Custom Entry verilog_portconn.
+Declare Custom Entry verilog_portconnid.
+Declare Custom Entry verilog_packeddim.
+Declare Custom Entry verilog_pexpr.
+Declare Custom Entry verilog_expr.
+Declare Custom Entry verilog_lit.
 
-Unset Printing Notations.
-Notation "'#[' t ]" := t (t custom ce_top).
+Notation "verilog_top:( t ')'" := t (t custom verilog_top).
 
 Section VModuleDecl.
   Context {VId: Set}.
@@ -116,7 +117,7 @@ Section VModuleDecl.
   (* | ( mintypmax_expression ) *)
   (* (v) | cast *)
   (* | streaming_expression *)
-  (* | sequence_method_call *)
+  (* | sequenverilog_method_call *)
   (* | $ *)
   (* | null *)
   (* expression ::= *)
@@ -183,7 +184,7 @@ Section VModuleDecl.
    * In order to solve this problem, we declare a custom entry for VPriLiteral and
    * define the following notation:
    * Notation "p" := (VExprPriLiteral p)
-   *   (in custom ce_expr at level 94, p custom ce_lit at level 94).
+   *   (in custom verilog_expr at level 94, p custom verilog_lit at level 94).
    *)
   (* Coercion VExprPriLiteral: VPriLiteral >-> VExpr. *)
   (** NOTE: cannot use this coercion as well, dropped when closing the section *)
@@ -227,7 +228,7 @@ Section VModuleDecl.
 
   (* event_expression ::= *)
   (*   [ edge_identifier ] expression [ iff expression ] *)
-  (* | sequence_instance [ iff expression ] *)
+  (* | sequenverilog_instance [ iff expression ] *)
   (* | event_expression or event_expression *)
   (* | event_expression , event_expression *)
   Inductive VEventExpr :=
@@ -239,37 +240,37 @@ Section VModuleDecl.
   (* (v) | @ ( event_expression ) *)
   (* (v) | @* *)
   (* (v) | @ \(\*\) *)
-  (* | @ sequence_instance *)
+  (* | @ sequenverilog_instance *)
   Inductive VEventControl :=
   | VEventControlExpr (ee: VEventExpr)
   | VEventControlAny.
   Coercion VEventControlExpr: VEventExpr >-> VEventControl.
 
   (* property_expr ::= *)
-  (* (v) | sequence_expr *)
+  (* (v) | sequenverilog_expr *)
   (* (v) | ( property_expr ) *)
   (* (v) | not property_expr *)
   (* (v) | property_expr or property_expr *)
   (* (v) | property_expr and property_expr *)
-  (* (v) | sequence_expr |-> property_expr *)
-  (* (v) | sequence_expr |=> property_expr *)
+  (* (v) | sequenverilog_expr |-> property_expr *)
+  (* (v) | sequenverilog_expr |=> property_expr *)
   (* (v) | if ( expression_or_dist ) property_expr [ else property_expr ] *)
   (* | property_instance *)
   (* (v) | clocking_event property_expr *)
-  (* sequence_expr ::= *)
-  (* | cycle_delay_range sequence_expr { cycle_delay_range sequence_expr } *)
-  (* | sequence_expr cycle_delay_range sequence_expr { cycle_delay_range sequence_expr } *)
+  (* sequenverilog_expr ::= *)
+  (* | cycle_delay_range sequenverilog_expr { cycle_delay_range sequenverilog_expr } *)
+  (* | sequenverilog_expr cycle_delay_range sequenverilog_expr { cycle_delay_range sequenverilog_expr } *)
   (* (v) | expression_or_dist [ boolean_abbrev ] *)
-  (* | ( expression_or_dist {, sequence_match_item } ) [ boolean_abbrev ] *)
-  (* | sequence_instance [ sequence_abbrev ] *)
-  (* | ( sequence_expr {, sequence_match_item } ) [ sequence_abbrev ] *)
-  (* (v) | sequence_expr and sequence_expr *)
-  (* (v) | sequence_expr intersect sequence_expr *)
-  (* (v) | sequence_expr or sequence_expr *)
-  (* | first_match ( sequence_expr {, sequence_match_item} ) | expression_or_dist throughout sequence_expr *)
-  (* (v) | sequence_expr within sequence_expr *)
-  (* (v) | clocking_event sequence_expr *)
-  (** Decided to merge property_expr and sequence_expr; let's revisit if any issues occur. *)
+  (* | ( expression_or_dist {, sequenverilog_match_item } ) [ boolean_abbrev ] *)
+  (* | sequenverilog_instance [ sequenverilog_abbrev ] *)
+  (* | ( sequenverilog_expr {, sequenverilog_match_item } ) [ sequenverilog_abbrev ] *)
+  (* (v) | sequenverilog_expr and sequenverilog_expr *)
+  (* (v) | sequenverilog_expr intersect sequenverilog_expr *)
+  (* (v) | sequenverilog_expr or sequenverilog_expr *)
+  (* | first_match ( sequenverilog_expr {, sequenverilog_match_item} ) | expression_or_dist throughout sequenverilog_expr *)
+  (* (v) | sequenverilog_expr within sequenverilog_expr *)
+  (* (v) | clocking_event sequenverilog_expr *)
+  (** Decided to merge property_expr and sequenverilog_expr; let's revisit if any issues occur. *)
   Inductive VPExpr :=
   (** For property_expr *)
   | VPExprNot (se: VPExpr)
@@ -279,7 +280,7 @@ Section VModuleDecl.
   | VPExprImpN (lse rse: VPExpr)
   | VPExprIfElse (ce: VExpr) (tse: VPExpr) (fse: option VPExpr)
   | VPExprClk (ec: VEventControl) (se: VPExpr)
-  (** For sequence_expr *)
+  (** For sequenverilog_expr *)
   | VPExprExpr (e: VExpr)
   | VPExprInter (lse rse: VPExpr)
   | VPExprWithin (lse rse: VPExpr).
@@ -361,7 +362,7 @@ Section VModuleDecl.
   (* | enum [ enum_base_type ] { enum_name_declaration { , enum_name_declaration } } *)
   (* | string *)
   (* | chandle *)
-  (* | virtual [ interface ] interface_identifier *)
+  (* | virtual [ interface ] interfaverilog_identifier *)
   (* | [ class_scope | package_scope ] type_identifier { packed_dimension } *)
   (* | class_type *)
   (* | event *)
@@ -398,7 +399,7 @@ Section VModuleDecl.
   (* | { attribute_instance } input_declaration *)
   (* | { attribute_instance } output_declaration *)
   (* | { attribute_instance } ref_declaration *)
-  (* | { attribute_instance } interface_port_declaration *)
+  (* | { attribute_instance } interfaverilog_port_declaration *)
   Inductive VPortDecl :=
   (* inout_declaration ::= inout port_type list_of_port_identifiers *)
   | VPortDeclInoutP (pt: VPortType) (pis: VPortIds)
@@ -414,7 +415,7 @@ Section VModuleDecl.
   | VPortDeclOutputD (dt: VDataType) (pis: VPortIds).
 
   (* ansi_port_declaration ::= *)
-  (* (v)   [ net_port_header | interface_port_header ] port_identifier { unpacked_dimension } *)
+  (* (v)   [ net_port_header | interfaverilog_port_header ] port_identifier { unpacked_dimension } *)
   (* (v) | [ variable_port_header ] port_identifier variable_dimension [ = constant_expression ] *)
   (* | [ net_port_header | variable_port_header ] . port_identifier ( [ expression ] ) *)
   Inductive VAnsiPortDecl :=
@@ -488,7 +489,7 @@ Section VModuleDecl.
   (* | wait_statement *)
   (* | procedural_assertion_statement *)
   (* | clocking_drive ; *)
-  (* | randsequence_statement *)
+  (* | randsequenverilog_statement *)
   (* | randcase_statement *)
   (* | expect_property_statement *)
   Inductive VStatementItem: Set :=
@@ -584,7 +585,7 @@ Section VModuleDecl.
   (* (v)   [ const ] [ lifetime ] variable_declaration *)
   (* | type_declaration *)
   (* | package_import_declaration *)
-  (* | virtual_interface_declaration *)
+  (* | virtual_interfaverilog_declaration *)
   Inductive VDataDecl :=
   | VDataDeclVarDecl (vd: VVarDecl).
   Coercion VDataDeclVarDecl: VVarDecl >-> VDataDecl.
@@ -632,11 +633,11 @@ Section VModuleDecl.
 
   (* task_declaration ::= task [ lifetime ] task_body_declaration *)
   (* task_body_declaration ::= *)
-  (*   [ interface_identifier . | class_scope ] task_identifier ; *)
+  (*   [ interfaverilog_identifier . | class_scope ] task_identifier ; *)
   (*   { tf_item_declaration } *)
   (*   { statement_or_null } *)
   (*   endtask [ : task_identifier ] *)
-  (* (v) | [ interface_identifier . | class_scope ] task_identifier ( [ tf_port_list ] ) ; *)
+  (* (v) | [ interfaverilog_identifier . | class_scope ] task_identifier ( [ tf_port_list ] ) ; *)
   (*   { block_item_declaration } *)
   (*   { statement_or_null } *)
   (*   endtask [ : task_identifier ] *)
@@ -653,11 +654,11 @@ Section VModuleDecl.
   (* function_declaration ::= function [ lifetime ] function_body_declaration *)
   (* function_body_declaration ::=  *)
   (*       function_data_type_or_implicit *)
-  (*       [ interface_identifier . | class_scope ] function_identifier ; { tf_item_declaration } *)
+  (*       [ interfaverilog_identifier . | class_scope ] function_identifier ; { tf_item_declaration } *)
   (*       { function_statement_or_null } *)
   (*       endfunction [ : function_identifier ] *)
   (* (v) | function_data_type_or_implicit *)
-  (*       [ interface_identifier . | class_scope ] function_identifier ( [ tf_port_list ] ) ; *)
+  (*       [ interfaverilog_identifier . | class_scope ] function_identifier ( [ tf_port_list ] ) ; *)
   (*       { block_item_declaration } *)
   (*       { function_statement_or_null } endfunction [ : function_identifier ] *)
   Inductive VFuncDecl :=
@@ -724,7 +725,7 @@ Section VModuleDecl.
 
   (* module_common_item ::= *)
   (* (v)   module_or_generate_item_declaration *)
-  (* | interface_instantiation *)
+  (* | interfaverilog_instantiation *)
   (* | program_instantiation *)
   (* (v) | concurrent_assertion_item *)
   (* | bind_directive *)
@@ -768,7 +769,7 @@ Section VModuleDecl.
   Coercion VPortConnsNamed: VNamedPortConns >-> VPortConns.
 
   (* hierarchical_instance ::= name_of_instance ( [ list_of_port_connections ] ) *)
-  (* name_of_instance ::= instance_identifier { unpacked_dimension } *)
+  (* name_of_instance ::= instanverilog_identifier { unpacked_dimension } *)
   Inductive VHierIns :=
   | VHierInsOne (iid: VId) (pcs: VPortConns).
 
@@ -872,55 +873,55 @@ End VModuleDecl.
 
 (*! Notations *)
 
-(** ce_lit *)
+(** verilog_lit *)
 
 (** NOTE: Idk but operation conflicts in the VExpr level are avoided by setting literals
  * placed at level 2. *)
 Notation "'b bv" := (VIntegralBinary None bv)
-                      (in custom ce_lit at level 0, bv constr at level 0).
+                      (in custom verilog_lit at level 0, bv constr at level 0).
 Notation "sz 'b bv" := (VIntegralBinary (Some sz) bv)
-                         (in custom ce_lit at level 0, sz constr at level 0, bv constr at level 0).
+                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr at level 0).
 
 Notation "'o bv" := (VIntegralOctal None bv)
-                      (in custom ce_lit at level 0, bv constr at level 0).
+                      (in custom verilog_lit at level 0, bv constr at level 0).
 Notation "sz 'o bv" := (VIntegralOctal (Some sz) bv)
-                         (in custom ce_lit at level 0, sz constr at level 0, bv constr at level 0).
+                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr at level 0).
 
 Notation "'h bv" := (VIntegralHex None bv)
-                      (in custom ce_lit at level 0, bv constr at level 0).
+                      (in custom verilog_lit at level 0, bv constr at level 0).
 Notation "sz 'h bv" := (VIntegralHex (Some sz) bv)
-                         (in custom ce_lit at level 0, sz constr at level 0, bv constr).
+                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr).
 
 Notation "bv" := (VDecimalNumberNB bv)
-                   (in custom ce_lit at level 0, bv constr at level 0).
+                   (in custom verilog_lit at level 0, bv constr at level 0).
 Notation "'d bv" := (VDecimalNumberB None bv)
-                      (in custom ce_lit at level 0, bv constr at level 0).
+                      (in custom verilog_lit at level 0, bv constr at level 0).
 Notation "sz 'd bv" := (VDecimalNumberB (Some sz) bv)
-                         (in custom ce_lit at level 0, sz constr at level 0, bv constr).
+                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr).
 
-Notation "'0" := VZeros (in custom ce_lit at level 0).
-Notation "'1" := VOnes (in custom ce_lit at level 0).
+Notation "'0" := VZeros (in custom verilog_lit at level 0).
+Notation "'1" := VOnes (in custom verilog_lit at level 0).
 
-(** ce_pexpr *)
+(** verilog_pexpr *)
 
-(* Custom-entry coercion from ce_expr to ce_pexpr *)
-Notation "e" := (VPExprExpr e) (in custom ce_pexpr at level 98, e custom ce_expr at level 97).
+(* Custom-entry coercion from verilog_expr to verilog_pexpr *)
+Notation "e" := (VPExprExpr e) (in custom verilog_pexpr at level 98, e custom verilog_expr at level 97).
 
-Notation "( e )" := e (in custom ce_pexpr, e at level 98).
+Notation "( e )" := e (in custom verilog_pexpr, e at level 98).
 
-Notation "'if' ( ce ) tpe" := (VPExprIfElse ce tpe None) (in custom ce_pexpr at level 97).
-Notation "'if' ( ce ) tpe 'else' fpe" := (VPExprIfElse ce tpe (Some fpe)) (in custom ce_pexpr at level 97).
-Notation "lpe '|->' rpe" := (VPExprImp lpe rpe) (in custom ce_pexpr at level 96, left associativity).
-Notation "lpe '|=>' rpe" := (VPExprImpN lpe rpe) (in custom ce_pexpr at level 96, left associativity).
-Notation "lpe '|=>' rpe" := (VPExprImpN lpe rpe) (in custom ce_pexpr at level 96, left associativity).
-Notation "lpe 'or' rpe" := (VPExprOr lpe rpe) (in custom ce_pexpr at level 95, left associativity).
-Notation "lpe 'and' rpe" := (VPExprAnd lpe rpe) (in custom ce_pexpr at level 95, left associativity).
-Notation "lpe 'intersect' rpe" := (VPExprInter lpe rpe) (in custom ce_pexpr at level 95, left associativity).
-Notation "lpe 'within' rpe" := (VPExprWithin lpe rpe) (in custom ce_pexpr at level 95, left associativity).
-Notation "'not' pe" := (VPExprNot pe) (in custom ce_pexpr at level 94).
-(* Notation "" := (VPExprClk ec se) (in custom ce_pexpr at level 97). *)
+Notation "'if' ( ce ) tpe" := (VPExprIfElse ce tpe None) (in custom verilog_pexpr at level 97).
+Notation "'if' ( ce ) tpe 'else' fpe" := (VPExprIfElse ce tpe (Some fpe)) (in custom verilog_pexpr at level 97).
+Notation "lpe '|->' rpe" := (VPExprImp lpe rpe) (in custom verilog_pexpr at level 96, left associativity).
+Notation "lpe '|=>' rpe" := (VPExprImpN lpe rpe) (in custom verilog_pexpr at level 96, left associativity).
+Notation "lpe '|=>' rpe" := (VPExprImpN lpe rpe) (in custom verilog_pexpr at level 96, left associativity).
+Notation "lpe 'or' rpe" := (VPExprOr lpe rpe) (in custom verilog_pexpr at level 95, left associativity).
+Notation "lpe 'and' rpe" := (VPExprAnd lpe rpe) (in custom verilog_pexpr at level 95, left associativity).
+Notation "lpe 'intersect' rpe" := (VPExprInter lpe rpe) (in custom verilog_pexpr at level 95, left associativity).
+Notation "lpe 'within' rpe" := (VPExprWithin lpe rpe) (in custom verilog_pexpr at level 95, left associativity).
+Notation "'not' pe" := (VPExprNot pe) (in custom verilog_pexpr at level 94).
+(* Notation "" := (VPExprClk ec se) (in custom verilog_pexpr at level 97). *)
 
-(** ce_expr *)
+(** verilog_expr *)
 
 (** NOTE: coercion (VId >-> VExpr) doesn't work for (list VExpr) or (option VExpr), thus concatenations like
  * {id1, id2} doesn't work. In order to solve this issue, we explicitly define (econs) to say that each
@@ -928,587 +929,587 @@ Notation "'not' pe" := (VPExprNot pe) (in custom ce_pexpr at level 94).
 Definition econs {VId} (e: @VExpr VId) (es: list VExpr): list VExpr := cons e es.
 Definition SomeE {VId} (e: @VExpr VId): option VExpr := Some e.
 
-(* Custom-entry coercion from ce_lit to ce_expr *)
-Notation "p" := (VExprPriLiteral p) (in custom ce_expr at level 0, p custom ce_lit at level 0).
+(* Custom-entry coercion from verilog_lit to verilog_expr *)
+Notation "p" := (VExprPriLiteral p) (in custom verilog_expr at level 0, p custom verilog_lit at level 0).
 
-Notation "( e )" := e (in custom ce_expr, e at level 99).
+Notation "( e )" := e (in custom verilog_expr, e at level 99).
 
-Notation "ce ? te : fe" := (VExprCond ce te fe) (in custom ce_expr at level 94, right associativity).
-Notation "le '||' re" := (VExprBinOp VBinLOr le re) (in custom ce_expr at level 93, left associativity).
-Notation "le '&&' re" := (VExprBinOp VBinLAnd le re) (in custom ce_expr at level 92, left associativity).
-Notation "le '|' re" := (VExprBinOp VBinBOr le re) (in custom ce_expr at level 91, left associativity).
-Notation "le '^' re" := (VExprBinOp VBinBXor le re) (in custom ce_expr at level 90, left associativity).
-Notation "le '^~' re" := (VExprBinOp VBinBXnor le re) (in custom ce_expr at level 90, left associativity).
-Notation "le '~^' re" := (VExprBinOp VBinBXnor le re) (in custom ce_expr at level 90, left associativity).
-Notation "le '&' re" := (VExprBinOp VBinBAnd le re) (in custom ce_expr at level 89, left associativity).
-Notation "le '===' re" := (VExprBinOp VBinFEq le re) (in custom ce_expr at level 88, left associativity).
-Notation "le '!==' re" := (VExprBinOp VBinFNEq le re) (in custom ce_expr at level 88, left associativity).
-Notation "le '=?=' re" := (VExprBinOp VBinWEq le re) (in custom ce_expr at level 88, left associativity).
-Notation "le '!?=' re" := (VExprBinOp VBinWNEq le re) (in custom ce_expr at level 88, left associativity).
-Notation "le '==' re" := (VExprBinOp VBinEq le re) (in custom ce_expr at level 87, left associativity).
-Notation "le '!=' re" := (VExprBinOp VBinNEq le re) (in custom ce_expr at level 87, left associativity).
-Notation "le '<' re" := (VExprBinOp VBinLt le re) (in custom ce_expr at level 86, left associativity).
+Notation "ce ? te : fe" := (VExprCond ce te fe) (in custom verilog_expr at level 94, right associativity).
+Notation "le '||' re" := (VExprBinOp VBinLOr le re) (in custom verilog_expr at level 93, left associativity).
+Notation "le '&&' re" := (VExprBinOp VBinLAnd le re) (in custom verilog_expr at level 92, left associativity).
+Notation "le '|' re" := (VExprBinOp VBinBOr le re) (in custom verilog_expr at level 91, left associativity).
+Notation "le '^' re" := (VExprBinOp VBinBXor le re) (in custom verilog_expr at level 90, left associativity).
+Notation "le '^~' re" := (VExprBinOp VBinBXnor le re) (in custom verilog_expr at level 90, left associativity).
+Notation "le '~^' re" := (VExprBinOp VBinBXnor le re) (in custom verilog_expr at level 90, left associativity).
+Notation "le '&' re" := (VExprBinOp VBinBAnd le re) (in custom verilog_expr at level 89, left associativity).
+Notation "le '===' re" := (VExprBinOp VBinFEq le re) (in custom verilog_expr at level 88, left associativity).
+Notation "le '!==' re" := (VExprBinOp VBinFNEq le re) (in custom verilog_expr at level 88, left associativity).
+Notation "le '=?=' re" := (VExprBinOp VBinWEq le re) (in custom verilog_expr at level 88, left associativity).
+Notation "le '!?=' re" := (VExprBinOp VBinWNEq le re) (in custom verilog_expr at level 88, left associativity).
+Notation "le '==' re" := (VExprBinOp VBinEq le re) (in custom verilog_expr at level 87, left associativity).
+Notation "le '!=' re" := (VExprBinOp VBinNEq le re) (in custom verilog_expr at level 87, left associativity).
+Notation "le '<' re" := (VExprBinOp VBinLt le re) (in custom verilog_expr at level 86, left associativity).
 
-Notation "ie 'inside' { ce }" := (VExprInside ie (econs ce nil)) (in custom ce_expr at level 86).
+Notation "ie 'inside' { ce }" := (VExprInside ie (econs ce nil)) (in custom verilog_expr at level 86).
 Notation "ie 'inside' { ce1 , .. , cen }" :=
-  (VExprInside ie (econs ce1 .. (econs cen nil) ..)) (in custom ce_expr at level 86).
+  (VExprInside ie (econs ce1 .. (econs cen nil) ..)) (in custom verilog_expr at level 86).
 
-Notation "le '<=' re" := (VExprBinOp VBinLe le re) (in custom ce_expr at level 86, left associativity).
-Notation "le '>' re" := (VExprBinOp VBinGt le re) (in custom ce_expr at level 86, left associativity).
-Notation "le '>=' re" := (VExprBinOp VBinGe le re) (in custom ce_expr at level 86, left associativity).
-Notation "le '>>' re" := (VExprBinOp VBinShr le re) (in custom ce_expr at level 85, left associativity).
-Notation "le '<<' re" := (VExprBinOp VBinShl le re) (in custom ce_expr at level 85, left associativity).
-Notation "le '>>>' re" := (VExprBinOp VBinSar le re) (in custom ce_expr at level 85, left associativity).
-Notation "le '<<<' re" := (VExprBinOp VBinSal le re) (in custom ce_expr at level 85, left associativity).
-Notation "le '+' re" := (VExprBinOp VBinAdd le re) (in custom ce_expr at level 84, left associativity).
-Notation "le '-' re" := (VExprBinOp VBinSub le re) (in custom ce_expr at level 84, left associativity).
-Notation "le '*' re" := (VExprBinOp VBinMul le re) (in custom ce_expr at level 83, left associativity).
-Notation "le '/' re" := (VExprBinOp VBinDiv le re) (in custom ce_expr at level 83, left associativity).
-Notation "le '%' re" := (VExprBinOp VBinRem le re) (in custom ce_expr at level 83, left associativity).
-Notation "le '**' re" := (VExprBinOp VBinPow le re) (in custom ce_expr at level 82, left associativity).
+Notation "le '<=' re" := (VExprBinOp VBinLe le re) (in custom verilog_expr at level 86, left associativity).
+Notation "le '>' re" := (VExprBinOp VBinGt le re) (in custom verilog_expr at level 86, left associativity).
+Notation "le '>=' re" := (VExprBinOp VBinGe le re) (in custom verilog_expr at level 86, left associativity).
+Notation "le '>>' re" := (VExprBinOp VBinShr le re) (in custom verilog_expr at level 85, left associativity).
+Notation "le '<<' re" := (VExprBinOp VBinShl le re) (in custom verilog_expr at level 85, left associativity).
+Notation "le '>>>' re" := (VExprBinOp VBinSar le re) (in custom verilog_expr at level 85, left associativity).
+Notation "le '<<<' re" := (VExprBinOp VBinSal le re) (in custom verilog_expr at level 85, left associativity).
+Notation "le '+' re" := (VExprBinOp VBinAdd le re) (in custom verilog_expr at level 84, left associativity).
+Notation "le '-' re" := (VExprBinOp VBinSub le re) (in custom verilog_expr at level 84, left associativity).
+Notation "le '*' re" := (VExprBinOp VBinMul le re) (in custom verilog_expr at level 83, left associativity).
+Notation "le '/' re" := (VExprBinOp VBinDiv le re) (in custom verilog_expr at level 83, left associativity).
+Notation "le '%' re" := (VExprBinOp VBinRem le re) (in custom verilog_expr at level 83, left associativity).
+Notation "le '**' re" := (VExprBinOp VBinPow le re) (in custom verilog_expr at level 82, left associativity).
 
-Notation "te [ se ]" := (VExprPriSelect te se) (in custom ce_expr at level 74).
-Notation "se [ lr : rr ]" := (VExprPriSelectConstRange se lr rr) (in custom ce_expr at level 74).
-Notation "se [ lr +: rr ]" := (VExprPriSelectIdxRangeAdd se lr rr) (in custom ce_expr at level 74).
-Notation "se [ lr -: rr ]" := (VExprPriSelectIdxRangeSub se lr rr) (in custom ce_expr at level 74).
+Notation "te [ se ]" := (VExprPriSelect te se) (in custom verilog_expr at level 74).
+Notation "se [ lr : rr ]" := (VExprPriSelectConstRange se lr rr) (in custom verilog_expr at level 74).
+Notation "se [ lr +: rr ]" := (VExprPriSelectIdxRangeAdd se lr rr) (in custom verilog_expr at level 74).
+Notation "se [ lr -: rr ]" := (VExprPriSelectIdxRangeSub se lr rr) (in custom verilog_expr at level 74).
 
-Notation "'++' i" := (VIncExpr i) (in custom ce_expr at level 78).
-Notation "i '++'" := (VIncExpr i) (in custom ce_expr at level 78).
-Notation "'--' i" := (VDecExpr i) (in custom ce_expr at level 78).
-Notation "i '--'" := (VDecExpr i) (in custom ce_expr at level 78).
+Notation "'++' i" := (VIncExpr i) (in custom verilog_expr at level 78).
+Notation "i '++'" := (VIncExpr i) (in custom verilog_expr at level 78).
+Notation "'--' i" := (VDecExpr i) (in custom verilog_expr at level 78).
+Notation "i '--'" := (VDecExpr i) (in custom verilog_expr at level 78).
 
-Notation "'+' e" := (VExprUniOp VUniPlus e) (in custom ce_expr at level 78).
-Notation "'-' e" := (VExprUniOp VUniMinus e) (in custom ce_expr at level 78).
+Notation "'+' e" := (VExprUniOp VUniPlus e) (in custom verilog_expr at level 78).
+Notation "'-' e" := (VExprUniOp VUniMinus e) (in custom verilog_expr at level 78).
 
-Notation "'!' e" := (VExprUniOp VUniNot e) (in custom ce_expr at level 77).
-Notation "'~' e" := (VExprUniOp VUniNeg e) (in custom ce_expr at level 77).
-Notation "'&' e" := (VExprUniOp VUniAnd e) (in custom ce_expr at level 77).
-Notation "'|' e" := (VExprUniOp VUniOr e) (in custom ce_expr at level 77).
-Notation "'~&' e" := (VExprUniOp VUniNand e) (in custom ce_expr at level 77).
-Notation "'~|' e" := (VExprUniOp VUniNor e) (in custom ce_expr at level 77).
-Notation "'^' e" := (VExprUniOp VUniXor e) (in custom ce_expr at level 77).
-Notation "'~^' e" := (VExprUniOp VUniXnor e) (in custom ce_expr at level 77).
-Notation "'^~' e" := (VExprUniOp VUniXnor e) (in custom ce_expr at level 77).
+Notation "'!' e" := (VExprUniOp VUniNot e) (in custom verilog_expr at level 77).
+Notation "'~' e" := (VExprUniOp VUniNeg e) (in custom verilog_expr at level 77).
+Notation "'&' e" := (VExprUniOp VUniAnd e) (in custom verilog_expr at level 77).
+Notation "'|' e" := (VExprUniOp VUniOr e) (in custom verilog_expr at level 77).
+Notation "'~&' e" := (VExprUniOp VUniNand e) (in custom verilog_expr at level 77).
+Notation "'~|' e" := (VExprUniOp VUniNor e) (in custom verilog_expr at level 77).
+Notation "'^' e" := (VExprUniOp VUniXor e) (in custom verilog_expr at level 77).
+Notation "'~^' e" := (VExprUniOp VUniXnor e) (in custom verilog_expr at level 77).
+Notation "'^~' e" := (VExprUniOp VUniXnor e) (in custom verilog_expr at level 77).
 
 (** NOTE: no dots (.) at all; see the hack used around the tester defined below. *)
-Notation "pe ce" := (VExprHier pe ce) (in custom ce_expr at level 72, left associativity).
+Notation "pe ce" := (VExprHier pe ce) (in custom verilog_expr at level 72, left associativity).
 
-Notation "'{}'" := (VExprPriConcat nil) (in custom ce_expr at level 70).
-Notation "'{' '}'" := (VExprPriConcat nil) (in custom ce_expr at level 70).
+Notation "'{}'" := (VExprPriConcat nil) (in custom verilog_expr at level 70).
+Notation "'{' '}'" := (VExprPriConcat nil) (in custom verilog_expr at level 70).
 
-Notation "'{' ne '{' se '}' '}'" := (VExprPriMultConcat ne (econs se nil)) (in custom ce_expr at level 70).
+Notation "'{' ne '{' se '}' '}'" := (VExprPriMultConcat ne (econs se nil)) (in custom verilog_expr at level 70).
 Notation "'{' ne '{' se1 , .. , sen '}' '}'" :=
-  (VExprPriMultConcat ne (econs se1 .. (econs sen nil) ..)) (in custom ce_expr at level 70).
+  (VExprPriMultConcat ne (econs se1 .. (econs sen nil) ..)) (in custom verilog_expr at level 70).
 
-Notation "'{' se '}'" := (VExprPriConcat (econs se nil)) (in custom ce_expr at level 70).
+Notation "'{' se '}'" := (VExprPriConcat (econs se nil)) (in custom verilog_expr at level 70).
 Notation "'{' se1 , .. , sen '}'" :=
-  (VExprPriConcat (econs se1 .. (econs sen nil) ..)) (in custom ce_expr at level 70).
+  (VExprPriConcat (econs se1 .. (econs sen nil) ..)) (in custom verilog_expr at level 70).
 
-Notation "sz '( e )" := (VExprCast sz e) (in custom ce_expr at level 70).
+Notation "sz '( e )" := (VExprCast sz e) (in custom verilog_expr at level 70).
 
-Notation "tfid ( ae )" := (VExprTfCall tfid (econs ae nil)) (in custom ce_expr at level 69).
-Notation "tfid ( ae1 , .. , aen )" := (VExprTfCall tfid (econs ae1 .. (econs aen nil) ..)) (in custom ce_expr at level 69).
+Notation "tfid ( ae )" := (VExprTfCall tfid (econs ae nil)) (in custom verilog_expr at level 69).
+Notation "tfid ( ae1 , .. , aen )" := (VExprTfCall tfid (econs ae1 .. (econs aen nil) ..)) (in custom verilog_expr at level 69).
 
-Notation "'$signed' ( ae )" := (VExprSystemTfCall VSystemTfSigned (econs ae nil)) (in custom ce_expr at level 69).
-Notation "'$unsigned' ( ae )" := (VExprSystemTfCall VSystemTfUnsigned (econs ae nil)) (in custom ce_expr at level 69).
+Notation "'$signed' ( ae )" := (VExprSystemTfCall VSystemTfSigned (econs ae nil)) (in custom verilog_expr at level 69).
+Notation "'$unsigned' ( ae )" := (VExprSystemTfCall VSystemTfUnsigned (econs ae nil)) (in custom verilog_expr at level 69).
 
-(** ce_packeddim *)
+(** verilog_packeddim *)
 
-Notation "[ de ]" := (VDimOne de) (in custom ce_packeddim at level 92, de custom ce_expr at level 91).
+Notation "[ de ]" := (VDimOne de) (in custom verilog_packeddim at level 92, de custom verilog_expr at level 91).
 Notation "[ lr : rr ]" := (VDimRange lr rr)
-                            (in custom ce_packeddim at level 92,
-                                lr custom ce_expr at level 91,
-                                rr custom ce_expr at level 91).
+                            (in custom verilog_packeddim at level 92,
+                                lr custom verilog_expr at level 91,
+                                rr custom verilog_expr at level 91).
 
 Notation "pd pds" := (VPackedDimsCons pd pds)
-                       (in custom ce_packeddim at level 93, right associativity).
+                       (in custom verilog_packeddim at level 93, right associativity).
 
-(** ce_stmt *)
+(** verilog_stmt *)
 
 Notation "'posedge' e" := (VEventExprExpr (Some VPosedge) e)
-                            (in custom ce_stmt at level 96, e custom ce_expr at level 95).
+                            (in custom verilog_stmt at level 96, e custom verilog_expr at level 95).
 Notation "'negedge' e" := (VEventExprExpr (Some VNegedge) e)
-                            (in custom ce_stmt at level 96, e custom ce_expr at level 95).
+                            (in custom verilog_stmt at level 96, e custom verilog_expr at level 95).
 
-(** NOTE: level of vlv and e should be smaller than the one for the (<=) operation in ce_expr. *)
+(** NOTE: level of vlv and e should be smaller than the one for the (<=) operation in verilog_expr. *)
 Notation "vlv = e ;" := (VStatementItemBlockingAssignNormal vlv e)
-                          (in custom ce_stmt at level 97,
-                              vlv custom ce_expr at level 80,
-                              e custom ce_expr at level 80).
+                          (in custom verilog_stmt at level 97,
+                              vlv custom verilog_expr at level 80,
+                              e custom verilog_expr at level 80).
 Notation "vlv <= e ;" := (VStatementItemNonblockingAssign vlv e)
-                           (in custom ce_stmt at level 97,
-                               vlv custom ce_expr at level 80,
-                               e custom ce_expr at level 80).
+                           (in custom verilog_stmt at level 97,
+                               vlv custom verilog_expr at level 80,
+                               e custom verilog_expr at level 80).
 
 Notation "'case' ( ce ) c1 .. cn 'endcase'" :=
   (VStatementCase VCaseTypeD ce (cons c1 .. (cons cn nil) ..))
-    (in custom ce_stmt at level 97, ce custom ce_expr at level 96).
+    (in custom verilog_stmt at level 97, ce custom verilog_expr at level 96).
 Notation "'casex' ( ce ) c1 .. cn 'endcase'" :=
   (VStatementCase VCaseTypeX ce (cons c1 .. (cons cn nil) ..))
-    (in custom ce_stmt at level 97, ce custom ce_expr at level 96).
+    (in custom verilog_stmt at level 97, ce custom verilog_expr at level 96).
 Notation "'casez' ( ce ) c1 .. cn 'endcase'" :=
   (VStatementCase VCaseTypeZ ce (cons c1 .. (cons cn nil) ..))
-    (in custom ce_stmt at level 97, ce custom ce_expr at level 96).
+    (in custom verilog_stmt at level 97, ce custom verilog_expr at level 96).
 
-(** NOTE: since the "case" items belong to ce_stmt, in the below notation the level of `ce` should not
+(** NOTE: since the "case" items belong to verilog_stmt, in the below notation the level of `ce` should not
  * be larger than the ones in `vlv = e;` and `vlv <= e;`.
  *)
 (* Notation "ce : st" := (VCaseItemCase VStatementItem (econs ce nil) st) *)
 Notation "ce : st" := (VCaseItemCase VStatementItem ce st)
-                        (in custom ce_stmt at level 97,
-                            ce custom ce_expr at level 80,
-                            st custom ce_stmt at level 97).
+                        (in custom verilog_stmt at level 97,
+                            ce custom verilog_expr at level 80,
+                            st custom verilog_stmt at level 97).
 (* Notation "ce1 , .. , cen : st" := (VCaseItemCase VStatementItem (econs ce1 .. (econs cen nil) ..) st) *)
-(*                                     (in custom ce_stmt at level 97, *)
-(*                                         ce1 custom ce_expr at level 80, *)
-(*                                         cen custom ce_expr at level 80, *)
-(*                                         st custom ce_stmt at level 97). *)
+(*                                     (in custom verilog_stmt at level 97, *)
+(*                                         ce1 custom verilog_expr at level 80, *)
+(*                                         cen custom verilog_expr at level 80, *)
+(*                                         st custom verilog_stmt at level 97). *)
 
-Notation "'default' : st" := (VCaseItemDefault VStatementItem st) (in custom ce_stmt at level 96).
+Notation "'default' : st" := (VCaseItemDefault VStatementItem st) (in custom verilog_stmt at level 96).
 
 Notation "'if' ( cp ) tsn" := (VStatementCond cp (Some tsn) None)
-                                (in custom ce_stmt at level 97,
-                                    cp custom ce_expr,
-                                    tsn custom ce_stmt at level 97).
+                                (in custom verilog_stmt at level 97,
+                                    cp custom verilog_expr,
+                                    tsn custom verilog_stmt at level 97).
 Notation "'if' ( cp ) tsn 'else' fsn" := (VStatementCond cp (Some tsn) (Some (Some fsn)))
-                                           (in custom ce_stmt at level 97,
-                                               cp custom ce_expr,
-                                               tsn custom ce_stmt at level 97,
-                                               fsn custom ce_stmt at level 97).
-Notation "'forever' sn" := (VStatementItemForever sn) (in custom ce_stmt at level 97).
+                                           (in custom verilog_stmt at level 97,
+                                               cp custom verilog_expr,
+                                               tsn custom verilog_stmt at level 97,
+                                               fsn custom verilog_stmt at level 97).
+Notation "'forever' sn" := (VStatementItemForever sn) (in custom verilog_stmt at level 97).
 Notation "'repeat' ( re ) sn" := (VStatementItemRepeat re sn)
-                                   (in custom ce_stmt at level 97, re custom ce_expr at level 96).
+                                   (in custom verilog_stmt at level 97, re custom verilog_expr at level 96).
 Notation "'while' ( we ) sn" := (VStatementItemWhile we sn)
-                                  (in custom ce_stmt at level 97, we custom ce_expr at level 96).
+                                  (in custom verilog_stmt at level 97, we custom verilog_expr at level 96).
 Notation "'for' ( init ; ce ; step ) sn" := (VStatementItemFor init ce step sn)
-                                              (in custom ce_stmt at level 97,
-                                                  init custom ce_assign at level 96,
-                                                  ce custom ce_expr at level 96,
-                                                  step custom ce_blockingassign at level 96).
+                                              (in custom verilog_stmt at level 97,
+                                                  init custom verilog_assign at level 96,
+                                                  ce custom verilog_expr at level 96,
+                                                  step custom verilog_blockingassign at level 96).
 Notation "'do' sn 'while' ( we )" := (VStatementItemDoWhile sn we)
-                                       (in custom ce_stmt at level 97, we custom ce_expr at level 96).
+                                       (in custom verilog_stmt at level 97, we custom verilog_expr at level 96).
 
 Notation "'return' re ;" := (VStatementItemReturn re)
-                              (in custom ce_stmt at level 97, re custom ce_expr at level 96).
+                              (in custom verilog_stmt at level 97, re custom verilog_expr at level 96).
 
-Notation "@ ( ee ) sn" := (VStatementProcTimingControl ee sn) (in custom ce_stmt at level 97).
-Notation "@ '*' sn" := (VStatementProcTimingControl VEventControlAny sn) (in custom ce_stmt at level 97).
+Notation "@ ( ee ) sn" := (VStatementProcTimingControl ee sn) (in custom verilog_stmt at level 97).
+Notation "@ '*' sn" := (VStatementProcTimingControl VEventControlAny sn) (in custom verilog_stmt at level 97).
 (** NOTE: cannot cover ( * ) since the one without whitespaces is a comment notation in Coq! *)
-(* Notation "@ '( * )' sn" := (VStatementProcTimingControl VEventControlAny sn) (in custom ce_stmt at level 97). *)
+(* Notation "@ '( * )' sn" := (VStatementProcTimingControl VEventControlAny sn) (in custom verilog_stmt at level 97). *)
 
-Notation "'begin' 'end'" := (VStatementSeqBlock nil) (in custom ce_stmt at level 97).
-Notation "'begin' s 'end'" := (VStatementSeqBlock (cons s nil)) (in custom ce_stmt at level 97).
+Notation "'begin' 'end'" := (VStatementSeqBlock nil) (in custom verilog_stmt at level 97).
+Notation "'begin' s 'end'" := (VStatementSeqBlock (cons s nil)) (in custom verilog_stmt at level 97).
 Notation "'begin' s1 .. sn 'end'" := (VStatementSeqBlock (cons s1 .. (cons sn nil) ..))
-                                       (in custom ce_stmt at level 97).
+                                       (in custom verilog_stmt at level 97).
 
-(** ce_assign *)
+(** verilog_assign *)
 
 Notation "lv = e" := (VAssignO lv e)
-                       (in custom ce_assign at level 95,
-                           lv custom ce_expr, e custom ce_expr).
+                       (in custom verilog_assign at level 95,
+                           lv custom verilog_expr, e custom verilog_expr).
 Notation "na , nas" := (VAssignsCons na nas)
-                         (in custom ce_assign at level 96, right associativity).
+                         (in custom verilog_assign at level 96, right associativity).
 
-(** ce_blockingassign *)
+(** verilog_blockingassign *)
 
-(* Custom-entry coercion from ce_expr to ce_blockingassign *)
-Notation "e" := e (in custom ce_blockingassign at level 95, e custom ce_expr at level 94).
+(* Custom-entry coercion from verilog_expr to verilog_blockingassign *)
+Notation "e" := e (in custom verilog_blockingassign at level 95, e custom verilog_expr at level 94).
 
-Notation "lv '=' e" := (VOpAssignO lv VAsnOpEq e) (in custom ce_blockingassign at level 95,
-                                                      lv custom ce_expr at level 94,
-                                                      e custom ce_expr at level 94).
-Notation "lv '+=' e" := (VOpAssignO lv VAsnOpAdd e) (in custom ce_blockingassign at level 95,
-                                                        lv custom ce_expr at level 94,
-                                                        e custom ce_expr at level 94).
-Notation "lv '-=' e" := (VOpAssignO lv VAsnOpSub e) (in custom ce_blockingassign at level 95,
-                                                        lv custom ce_expr at level 94,
-                                                        e custom ce_expr at level 94).
-Notation "lv '*=' e" := (VOpAssignO lv VAsnOpMul e) (in custom ce_blockingassign at level 95,
-                                                        lv custom ce_expr at level 94,
-                                                        e custom ce_expr at level 94).
-Notation "lv '/=' e" := (VOpAssignO lv VAsnOpDiv e) (in custom ce_blockingassign at level 95,
-                                                        lv custom ce_expr at level 94,
-                                                        e custom ce_expr at level 94).
-Notation "lv '%=' e" := (VOpAssignO lv VAsnOpRem e) (in custom ce_blockingassign at level 95,
-                                                        lv custom ce_expr at level 94,
-                                                        e custom ce_expr at level 94).
-Notation "lv '&=' e" := (VOpAssignO lv VAsnOpBAnd e) (in custom ce_blockingassign at level 95,
-                                                         lv custom ce_expr at level 94,
-                                                         e custom ce_expr at level 94).
-Notation "lv '|=' e" := (VOpAssignO lv VAsnOpBOr e) (in custom ce_blockingassign at level 95,
-                                                        lv custom ce_expr at level 94,
-                                                        e custom ce_expr at level 94).
-Notation "lv '^=' e" := (VOpAssignO lv VAsnOpBXor e) (in custom ce_blockingassign at level 95,
-                                                         lv custom ce_expr at level 94,
-                                                         e custom ce_expr at level 94).
-Notation "lv '<<=' e" := (VOpAssignO lv VAsnOpShl e) (in custom ce_blockingassign at level 95,
-                                                         lv custom ce_expr at level 94,
-                                                         e custom ce_expr at level 94).
-Notation "lv '>>=' e" := (VOpAssignO lv VAsnOpShr e) (in custom ce_blockingassign at level 95,
-                                                         lv custom ce_expr at level 94,
-                                                         e custom ce_expr at level 94).
-Notation "lv '<<<=' e" := (VOpAssignO lv VAsnOpSal e) (in custom ce_blockingassign at level 95,
-                                                          lv custom ce_expr at level 94,
-                                                          e custom ce_expr at level 94).
-Notation "lv '>>>=' e" := (VOpAssignO lv VAsnOpSar e) (in custom ce_blockingassign at level 95,
-                                                          lv custom ce_expr at level 94,
-                                                          e custom ce_expr at level 94).
+Notation "lv '=' e" := (VOpAssignO lv VAsnOpEq e) (in custom verilog_blockingassign at level 95,
+                                                      lv custom verilog_expr at level 94,
+                                                      e custom verilog_expr at level 94).
+Notation "lv '+=' e" := (VOpAssignO lv VAsnOpAdd e) (in custom verilog_blockingassign at level 95,
+                                                        lv custom verilog_expr at level 94,
+                                                        e custom verilog_expr at level 94).
+Notation "lv '-=' e" := (VOpAssignO lv VAsnOpSub e) (in custom verilog_blockingassign at level 95,
+                                                        lv custom verilog_expr at level 94,
+                                                        e custom verilog_expr at level 94).
+Notation "lv '*=' e" := (VOpAssignO lv VAsnOpMul e) (in custom verilog_blockingassign at level 95,
+                                                        lv custom verilog_expr at level 94,
+                                                        e custom verilog_expr at level 94).
+Notation "lv '/=' e" := (VOpAssignO lv VAsnOpDiv e) (in custom verilog_blockingassign at level 95,
+                                                        lv custom verilog_expr at level 94,
+                                                        e custom verilog_expr at level 94).
+Notation "lv '%=' e" := (VOpAssignO lv VAsnOpRem e) (in custom verilog_blockingassign at level 95,
+                                                        lv custom verilog_expr at level 94,
+                                                        e custom verilog_expr at level 94).
+Notation "lv '&=' e" := (VOpAssignO lv VAsnOpBAnd e) (in custom verilog_blockingassign at level 95,
+                                                         lv custom verilog_expr at level 94,
+                                                         e custom verilog_expr at level 94).
+Notation "lv '|=' e" := (VOpAssignO lv VAsnOpBOr e) (in custom verilog_blockingassign at level 95,
+                                                        lv custom verilog_expr at level 94,
+                                                        e custom verilog_expr at level 94).
+Notation "lv '^=' e" := (VOpAssignO lv VAsnOpBXor e) (in custom verilog_blockingassign at level 95,
+                                                         lv custom verilog_expr at level 94,
+                                                         e custom verilog_expr at level 94).
+Notation "lv '<<=' e" := (VOpAssignO lv VAsnOpShl e) (in custom verilog_blockingassign at level 95,
+                                                         lv custom verilog_expr at level 94,
+                                                         e custom verilog_expr at level 94).
+Notation "lv '>>=' e" := (VOpAssignO lv VAsnOpShr e) (in custom verilog_blockingassign at level 95,
+                                                         lv custom verilog_expr at level 94,
+                                                         e custom verilog_expr at level 94).
+Notation "lv '<<<=' e" := (VOpAssignO lv VAsnOpSal e) (in custom verilog_blockingassign at level 95,
+                                                          lv custom verilog_expr at level 94,
+                                                          e custom verilog_expr at level 94).
+Notation "lv '>>>=' e" := (VOpAssignO lv VAsnOpSar e) (in custom verilog_blockingassign at level 95,
+                                                          lv custom verilog_expr at level 94,
+                                                          e custom verilog_expr at level 94).
 
-(** ce_netdeclassign *)
+(** verilog_netdeclassign *)
 
 Notation "vid" := (VNetDeclAssignOne vid None)
-                    (in custom ce_netdeclassign at level 94, vid custom ce_expr at level 94).
+                    (in custom verilog_netdeclassign at level 94, vid custom verilog_expr at level 94).
 Notation "vid = ve" := (VNetDeclAssignOne vid (SomeE ve)) (** NOTE: search for SomeE why we need it. *)
-                         (in custom ce_netdeclassign at level 94,
-                             vid custom ce_expr at level 94,
-                             ve custom ce_expr at level 94).
+                         (in custom verilog_netdeclassign at level 94,
+                             vid custom verilog_expr at level 94,
+                             ve custom verilog_expr at level 94).
 Notation "va , vas" := (VNetDeclAssignsCons va vas)
-                         (in custom ce_netdeclassign at level 94, right associativity).
+                         (in custom verilog_netdeclassign at level 94, right associativity).
 
-(** ce_vardeclassign *)
+(** verilog_vardeclassign *)
 
 Notation "vid" := (VVarDeclAssignVar vid VPackedDimsNil None)
-                    (in custom ce_vardeclassign at level 93, vid custom ce_expr at level 93).
+                    (in custom verilog_vardeclassign at level 93, vid custom verilog_expr at level 93).
 Notation "vid vd" := (VVarDeclAssignVar vid vd None)
-                       (in custom ce_vardeclassign at level 93,
-                           vd custom ce_packeddim at level 93,
-                           vid custom ce_expr at level 93).
+                       (in custom verilog_vardeclassign at level 93,
+                           vd custom verilog_packeddim at level 93,
+                           vid custom verilog_expr at level 93).
 Notation "va , vas" := (VVarDeclAssignsCons va vas)
-                         (in custom ce_vardeclassign at level 93, right associativity).
+                         (in custom verilog_vardeclassign at level 93, right associativity).
 
-(** ce_paramassign *)
+(** verilog_paramassign *)
 
 Notation "pid = cpe" := (VParamAssignOne pid cpe)
-                          (in custom ce_paramassign at level 97,
-                              pid custom ce_expr, cpe custom ce_expr).
+                          (in custom verilog_paramassign at level 97,
+                              pid custom verilog_expr, cpe custom verilog_expr).
 Notation "pa , pas" := (VParamAssignsCons pa pas)
-                         (in custom ce_paramassign at level 97, right associativity).
+                         (in custom verilog_paramassign at level 97, right associativity).
 
-(** ce_paramports *)
+(** verilog_paramports *)
 
-(** NOTE: may want to share notations with ce_paramassign; so many variants for parameters
+(** NOTE: may want to share notations with verilog_paramassign; so many variants for parameters
  * thus it'd be better to share with them. *)
 
 Notation "'parameter' pid = cpe" :=
   (VParamDeclData (VDataTypeOrImplicitImp VPackedDimsNil) (VParamAssignOne pid cpe))
-    (in custom ce_paramports at level 98,
-        pid custom ce_expr, cpe custom ce_expr).
+    (in custom verilog_paramports at level 98,
+        pid custom verilog_expr, cpe custom verilog_expr).
 Notation "'parameter' pds pid = cpe" :=
   (VParamDeclData (VDataTypeOrImplicitImp pds) (VParamAssignOne pid cpe))
-    (in custom ce_paramports at level 98,
-        pds custom ce_packeddim,
-        pid custom ce_expr,
-        cpe custom ce_expr).
+    (in custom verilog_paramports at level 98,
+        pds custom verilog_packeddim,
+        pid custom verilog_expr,
+        cpe custom verilog_expr).
 Notation "'parameter' 'integer' pid = cpe" :=
   (VParamDeclData (VDataTypeOrImplicitDat (VDataTypeIntAtom VInteger)) (VParamAssignOne pid cpe))
-    (in custom ce_paramports at level 98,
-        pid custom ce_expr,
-        cpe custom ce_expr).
+    (in custom verilog_paramports at level 98,
+        pid custom verilog_expr,
+        cpe custom verilog_expr).
 
 Notation "pd , pds" := (VParamPortsCons pd pds)
-                         (in custom ce_paramports at level 99, right associativity).
+                         (in custom verilog_paramports at level 99, right associativity).
 
-(** ce_ports *)
+(** verilog_ports *)
 
 Notation "pid" :=
   (VAnsiPortDeclNet
      (Some (VNetPortHeaderO None (VPortTypeO None VPackedDimsNil)))
      pid)
-    (in custom ce_ports at level 95, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pid custom verilog_expr at level 94).
 
 Notation "'input' pid" :=
   (VAnsiPortDeclNet
      (Some (VNetPortHeaderO (Some VPortDirectionInput) (VPortTypeO None VPackedDimsNil)))
      pid)
-    (in custom ce_ports at level 95, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pid custom verilog_expr at level 94).
 Notation "'input' 'wire' pid" :=
   (VAnsiPortDeclNet
      (Some (VNetPortHeaderO (Some VPortDirectionInput) (VPortTypeO (Some VNetTypeWire) VPackedDimsNil)))
      pid)
-    (in custom ce_ports at level 95, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pid custom verilog_expr at level 94).
 Notation "'input' 'reg' pid" :=
   (VAnsiPortDeclVar
      (Some (VVarPortHeaderO (Some VPortDirectionInput) (VDataTypeIntVec VReg VPackedDimsNil)))
      pid)
-    (in custom ce_ports at level 95, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pid custom verilog_expr at level 94).
 Notation "'input' 'logic' pid" :=
   (VAnsiPortDeclVar
      (Some (VVarPortHeaderO (Some VPortDirectionInput) (VDataTypeIntVec VLogic VPackedDimsNil)))
      pid)
-    (in custom ce_ports at level 95, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pid custom verilog_expr at level 94).
 
 Notation "'input' pd pid" :=
   (VAnsiPortDeclNet
      (Some (VNetPortHeaderO (Some VPortDirectionInput) (VPortTypeO None pd)))
      pid)
-    (in custom ce_ports at level 95, pd custom ce_packeddim at level 94, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pd custom verilog_packeddim at level 94, pid custom verilog_expr at level 94).
 Notation "'input' 'wire' pd pid" :=
   (VAnsiPortDeclNet
      (Some (VNetPortHeaderO (Some VPortDirectionInput) (VPortTypeO (Some VNetTypeWire) pd)))
      pid)
-    (in custom ce_ports at level 95, pd custom ce_packeddim at level 94, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pd custom verilog_packeddim at level 94, pid custom verilog_expr at level 94).
 Notation "'input' 'reg' pd pid" :=
   (VAnsiPortDeclVar
      (Some (VVarPortHeaderO (Some VPortDirectionInput) (VDataTypeIntVec VReg pd)))
      pid)
-    (in custom ce_ports at level 95, pd custom ce_packeddim at level 94, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pd custom verilog_packeddim at level 94, pid custom verilog_expr at level 94).
 Notation "'input' 'logic' pd pid" :=
   (VAnsiPortDeclVar
      (Some (VVarPortHeaderO (Some VPortDirectionInput) (VDataTypeIntVec VLogic pd)))
      pid)
-    (in custom ce_ports at level 95, pd custom ce_packeddim at level 94, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pd custom verilog_packeddim at level 94, pid custom verilog_expr at level 94).
 
 Notation "'output' pid" :=
   (VAnsiPortDeclNet
      (Some (VNetPortHeaderO (Some VPortDirectionOutput) (VPortTypeO None VPackedDimsNil)))
      pid)
-    (in custom ce_ports at level 95, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pid custom verilog_expr at level 94).
 Notation "'output' 'wire' pid" :=
   (VAnsiPortDeclNet
      (Some (VNetPortHeaderO (Some VPortDirectionOutput) (VPortTypeO (Some VNetTypeWire) VPackedDimsNil)))
      pid)
-    (in custom ce_ports at level 95, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pid custom verilog_expr at level 94).
 Notation "'output' 'reg' pid" :=
   (VAnsiPortDeclVar
      (Some (VVarPortHeaderO (Some VPortDirectionOutput) (VDataTypeIntVec VReg VPackedDimsNil)))
      pid)
-    (in custom ce_ports at level 95, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pid custom verilog_expr at level 94).
 Notation "'output' 'logic' pid" :=
   (VAnsiPortDeclVar
      (Some (VVarPortHeaderO (Some VPortDirectionOutput) (VDataTypeIntVec VLogic VPackedDimsNil)))
      pid)
-    (in custom ce_ports at level 95, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pid custom verilog_expr at level 94).
 
 Notation "'output' pd pid" :=
   (VAnsiPortDeclNet
      (Some (VNetPortHeaderO (Some VPortDirectionOutput) (VPortTypeO None pd)))
      pid)
-    (in custom ce_ports at level 95, pd custom ce_packeddim at level 94, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pd custom verilog_packeddim at level 94, pid custom verilog_expr at level 94).
 Notation "'output' 'wire' pd pid" :=
   (VAnsiPortDeclNet
      (Some (VNetPortHeaderO (Some VPortDirectionOutput) (VPortTypeO (Some VNetTypeWire) pd)))
      pid)
-    (in custom ce_ports at level 95, pd custom ce_packeddim at level 94, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pd custom verilog_packeddim at level 94, pid custom verilog_expr at level 94).
 Notation "'output' 'reg' pd pid" :=
   (VAnsiPortDeclVar
      (Some (VVarPortHeaderO (Some VPortDirectionOutput) (VDataTypeIntVec VReg pd)))
      pid)
-    (in custom ce_ports at level 95, pd custom ce_packeddim at level 94, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pd custom verilog_packeddim at level 94, pid custom verilog_expr at level 94).
 Notation "'output' 'logic' pd pid" :=
   (VAnsiPortDeclVar
      (Some (VVarPortHeaderO (Some VPortDirectionOutput) (VDataTypeIntVec VLogic pd)))
      pid)
-    (in custom ce_ports at level 95, pd custom ce_packeddim at level 94, pid custom ce_expr at level 94).
+    (in custom verilog_ports at level 95, pd custom verilog_packeddim at level 94, pid custom verilog_expr at level 94).
 
 Notation "p , ps" := (VAnsiPortDeclsCons p ps)
-                       (in custom ce_ports at level 96, right associativity).
+                       (in custom verilog_ports at level 96, right associativity).
 
-(** ce_gen *)
+(** verilog_gen *)
 
 (** NOTE: the level should be smaller than the one for VModuleItemsCons. *)
-Notation "mgi" := (VGenerateModuleItemModule mgi) (in custom ce_gen at level 98,
-                                                      mgi custom ce_module at level 98).
+Notation "mgi" := (VGenerateModuleItemModule mgi) (in custom verilog_gen at level 98,
+                                                      mgi custom verilog_module at level 98).
 
 Definition gcons {VId} (gmi: @VGenerateModuleItem VId) (gmis: list VGenerateModuleItem)
   : list VGenerateModuleItem := cons gmi gmis.
-Notation "'begin' 'end'" := (VGenerateModuleItemBlock nil) (in custom ce_gen at level 98).
-Notation "'begin' s 'end'" := (VGenerateModuleItemBlock (gcons s nil)) (in custom ce_gen at level 98).
+Notation "'begin' 'end'" := (VGenerateModuleItemBlock nil) (in custom verilog_gen at level 98).
+Notation "'begin' s 'end'" := (VGenerateModuleItemBlock (gcons s nil)) (in custom verilog_gen at level 98).
 Notation "'begin' s1 .. sn 'end'" := (VGenerateModuleItemBlock (gcons s1 .. (gcons sn nil) ..))
-                                       (in custom ce_gen at level 98).
+                                       (in custom verilog_gen at level 98).
 
 Notation "'if' ( ce ) tgmi" := (VGenerateModuleItemCond ce tgmi None)
-                                 (in custom ce_gen at level 98,
-                                     ce custom ce_expr at level 98,
-                                     tgmi custom ce_gen at level 98).
+                                 (in custom verilog_gen at level 98,
+                                     ce custom verilog_expr at level 98,
+                                     tgmi custom verilog_gen at level 98).
 Notation "'if' ( ce ) tgmi 'else' fgmi" := (VGenerateModuleItemCond ce tgmi (Some fgmi))
-                                             (in custom ce_gen at level 98,
-                                                 ce custom ce_expr at level 98,
-                                                 tgmi custom ce_gen at level 98,
-                                                 fgmi custom ce_gen at level 98).
+                                             (in custom verilog_gen at level 98,
+                                                 ce custom verilog_expr at level 98,
+                                                 tgmi custom verilog_gen at level 98,
+                                                 fgmi custom verilog_gen at level 98).
 
-(** ce_module *)
+(** verilog_module *)
 
-Notation "'.*'" := VNamedPortConnW (in custom ce_portconn).
+Notation "'.*'" := VNamedPortConnW (in custom verilog_portconn).
 Notation "pcid" := (VNamedPortConnI pcid)
-                     (in custom ce_portconn at level 96,
-                         pcid custom ce_portconnid at level 94).
+                     (in custom verilog_portconn at level 96,
+                         pcid custom verilog_portconnid at level 94).
 Notation "pcid '()'" := (VNamedPortConnI pcid)
-                          (in custom ce_portconn at level 96,
-                              pcid custom ce_portconnid at level 94).
+                          (in custom verilog_portconn at level 96,
+                              pcid custom verilog_portconnid at level 94).
 (** NOTE: interestingly ( ) cannot cover () *)
 Notation "pcid '(' ')'" := (VNamedPortConnI pcid)
-                             (in custom ce_portconn at level 96,
-                                 pcid custom ce_portconnid at level 94).
+                             (in custom verilog_portconn at level 96,
+                                 pcid custom verilog_portconnid at level 94).
 Notation "pcid '(' e ')'" := (VNamedPortConnE pcid e)
-                               (in custom ce_portconn at level 96,
-                                   pcid custom ce_portconnid at level 94,
-                                   e custom ce_expr at level 94).
+                               (in custom verilog_portconn at level 96,
+                                   pcid custom verilog_portconnid at level 94,
+                                   e custom verilog_expr at level 94).
 Notation "pc , pcs" := (VNamedPortConnsCons pc pcs)
-                         (in custom ce_portconn at level 97, right associativity).
+                         (in custom verilog_portconn at level 97, right associativity).
 
 Notation "'input' pis ;" := (VPortDeclInputP (VPortTypeO None VPackedDimsNil) pis)
-                              (in custom ce_module at level 98, pis custom ce_expr at level 94).
+                              (in custom verilog_module at level 98, pis custom verilog_expr at level 94).
 Notation "'input' 'wire' pis ;" := (VPortDeclInputP (VPortTypeO (Some VNetTypeWire) VPackedDimsNil) pis)
-                                     (in custom ce_module at level 98, pis custom ce_expr at level 94).
+                                     (in custom verilog_module at level 98, pis custom verilog_expr at level 94).
 Notation "'input' 'reg' pis ;" := (VPortDeclInputD (VDataTypeIntVec VReg VPackedDimsNil) pis)
-                                    (in custom ce_module at level 98, pis custom ce_expr at level 94).
+                                    (in custom verilog_module at level 98, pis custom verilog_expr at level 94).
 Notation "'input' pd pis ;" := (VPortDeclInputP (VPortTypeO None pd) pis)
-                                 (in custom ce_module at level 98,
-                                     pd custom ce_packeddim at level 94,
-                                     pis custom ce_expr at level 94).
+                                 (in custom verilog_module at level 98,
+                                     pd custom verilog_packeddim at level 94,
+                                     pis custom verilog_expr at level 94).
 Notation "'input' 'wire' pd pis ;" := (VPortDeclInputP (VPortTypeO (Some VNetTypeWire) pd) pis)
-                                        (in custom ce_module at level 98,
-                                            pd custom ce_packeddim at level 94,
-                                            pis custom ce_expr at level 94).
+                                        (in custom verilog_module at level 98,
+                                            pd custom verilog_packeddim at level 94,
+                                            pis custom verilog_expr at level 94).
 Notation "'input' 'reg' pd pis ;" := (VPortDeclInputD (VDataTypeIntVec VReg pd) pis)
-                                       (in custom ce_module at level 98,
-                                           pd custom ce_packeddim at level 94,
-                                           pis custom ce_expr at level 94).
+                                       (in custom verilog_module at level 98,
+                                           pd custom verilog_packeddim at level 94,
+                                           pis custom verilog_expr at level 94).
 
 Notation "'output' pis ;" := (VPortDeclOutputP (VPortTypeO None VPackedDimsNil) pis)
-                               (in custom ce_module at level 98, pis custom ce_expr at level 94).
+                               (in custom verilog_module at level 98, pis custom verilog_expr at level 94).
 Notation "'output' 'wire' pis ;" := (VPortDeclOutputP (VPortTypeO (Some VNetTypeWire) VPackedDimsNil) pis)
-                                      (in custom ce_module at level 98, pis custom ce_expr at level 94).
+                                      (in custom verilog_module at level 98, pis custom verilog_expr at level 94).
 Notation "'output' 'reg' pis ;" := (VPortDeclOutputD (VDataTypeIntVec VReg VPackedDimsNil) pis)
-                                     (in custom ce_module at level 98, pis custom ce_expr at level 94).
+                                     (in custom verilog_module at level 98, pis custom verilog_expr at level 94).
 Notation "'output' pd pis ;" := (VPortDeclOutputP (VPortTypeO None pd) pis)
-                                  (in custom ce_module at level 98,
-                                      pd custom ce_packeddim at level 94,
-                                      pis custom ce_expr at level 94).
+                                  (in custom verilog_module at level 98,
+                                      pd custom verilog_packeddim at level 94,
+                                      pis custom verilog_expr at level 94).
 Notation "'output' 'wire' pd pis ;" := (VPortDeclOutputP (VPortTypeO (Some VNetTypeWire) pd) pis)
-                                         (in custom ce_module at level 98,
-                                             pd custom ce_packeddim at level 94,
-                                             pis custom ce_expr at level 94).
+                                         (in custom verilog_module at level 98,
+                                             pd custom verilog_packeddim at level 94,
+                                             pis custom verilog_expr at level 94).
 Notation "'output' 'reg' pd pis ;" := (VPortDeclOutputD (VDataTypeIntVec VReg pd) pis)
-                                        (in custom ce_module at level 98,
-                                            pd custom ce_packeddim at level 94,
-                                            pis custom ce_expr at level 94).
+                                        (in custom verilog_module at level 98,
+                                            pd custom verilog_packeddim at level 94,
+                                            pis custom verilog_expr at level 94).
 
 Notation "'parameter' pas ;" := (VParamDeclData (VDataTypeOrImplicitImp VPackedDimsNil) pas)
-                                  (in custom ce_module at level 98, pas custom ce_paramassign).
+                                  (in custom verilog_module at level 98, pas custom verilog_paramassign).
 Notation "'parameter' 'integer' pas ;" := (VParamDeclData (VDataTypeOrImplicitDat (VDataTypeIntAtom VInteger)) pas)
-                                            (in custom ce_module at level 98, pas custom ce_paramassign).
+                                            (in custom verilog_module at level 98, pas custom verilog_paramassign).
 
 Notation "'localparam' pas ;" := (VLocalParamDeclOne (VDataTypeOrImplicitImp VPackedDimsNil) pas)
-                                   (in custom ce_module at level 98, pas custom ce_paramassign).
+                                   (in custom verilog_module at level 98, pas custom verilog_paramassign).
 Notation "'localparam' pd pas ;" := (VLocalParamDeclOne (VDataTypeOrImplicitImp pd) pas)
-                                      (in custom ce_module at level 98,
-                                          pd custom ce_packeddim,
-                                          pas custom ce_paramassign).
+                                      (in custom verilog_module at level 98,
+                                          pd custom verilog_packeddim,
+                                          pas custom verilog_paramassign).
 Notation "'localparam' 'integer' pas ;" := (VLocalParamDeclOne (VDataTypeOrImplicitDat (VDataTypeIntAtom VInteger)) pas)
-                                             (in custom ce_module at level 98, pas custom ce_paramassign).
+                                             (in custom verilog_module at level 98, pas custom verilog_paramassign).
 
 Notation "'bit' vdas ;" := (VVarDeclOne (VDataTypeIntVec VBit VPackedDimsNil) vdas)
-                             (in custom ce_module at level 98,
-                                 vdas custom ce_vardeclassign at level 94).
+                             (in custom verilog_module at level 98,
+                                 vdas custom verilog_vardeclassign at level 94).
 Notation "'bit' pd vdas ;" := (VVarDeclOne (VDataTypeIntVec VBit pd) vdas)
-                                (in custom ce_module at level 98,
-                                    pd custom ce_packeddim at level 94,
-                                    vdas custom ce_vardeclassign at level 94).
+                                (in custom verilog_module at level 98,
+                                    pd custom verilog_packeddim at level 94,
+                                    vdas custom verilog_vardeclassign at level 94).
 Notation "'logic' vdas ;" := (VVarDeclOne (VDataTypeIntVec VLogic VPackedDimsNil) vdas)
-                               (in custom ce_module at level 98,
-                                   vdas custom ce_vardeclassign at level 94).
+                               (in custom verilog_module at level 98,
+                                   vdas custom verilog_vardeclassign at level 94).
 Notation "'logic' pd vdas ;" := (VVarDeclOne (VDataTypeIntVec VLogic pd) vdas)
-                                  (in custom ce_module at level 98,
-                                      pd custom ce_packeddim at level 94,
-                                      vdas custom ce_vardeclassign at level 94).
+                                  (in custom verilog_module at level 98,
+                                      pd custom verilog_packeddim at level 94,
+                                      vdas custom verilog_vardeclassign at level 94).
 Notation "'reg' vdas ;" := (VVarDeclOne (VDataTypeIntVec VReg VPackedDimsNil) vdas)
-                             (in custom ce_module at level 98,
-                                 vdas custom ce_vardeclassign at level 94).
+                             (in custom verilog_module at level 98,
+                                 vdas custom verilog_vardeclassign at level 94).
 Notation "'reg' pd vdas ;" := (VVarDeclOne (VDataTypeIntVec VReg pd) vdas)
-                                (in custom ce_module at level 98,
-                                    pd custom ce_packeddim at level 94,
-                                    vdas custom ce_vardeclassign at level 94).
+                                (in custom verilog_module at level 98,
+                                    pd custom verilog_packeddim at level 94,
+                                    vdas custom verilog_vardeclassign at level 94).
 
 Notation "'int' vdas ;" := (VVarDeclOne (VDataTypeIntAtom VInteger) vdas)
-                             (in custom ce_module at level 98,
-                                 vdas custom ce_vardeclassign at level 94).
+                             (in custom verilog_module at level 98,
+                                 vdas custom verilog_vardeclassign at level 94).
 Notation "'integer' vdas ;" := (VVarDeclOne (VDataTypeIntAtom VInteger) vdas)
-                                 (in custom ce_module at level 98,
-                                     vdas custom ce_vardeclassign at level 94).
+                                 (in custom verilog_module at level 98,
+                                     vdas custom verilog_vardeclassign at level 94).
 
 Notation "'wire' ndas ;" := (VNetDeclOne VNetTypeWire VPackedDimsNil ndas)
-                              (in custom ce_module at level 98,
-                                  ndas custom ce_netdeclassign at level 94).
+                              (in custom verilog_module at level 98,
+                                  ndas custom verilog_netdeclassign at level 94).
 Notation "'wire' pd ndas ;" := (VNetDeclOne VNetTypeWire pd ndas)
-                                 (in custom ce_module at level 98,
-                                     pd custom ce_packeddim at level 94,
-                                     ndas custom ce_netdeclassign at level 94).
+                                 (in custom verilog_module at level 98,
+                                     pd custom verilog_packeddim at level 94,
+                                     ndas custom verilog_netdeclassign at level 94).
 
 Notation "'assign' nas ;" := (VContAssignNet nas)
-                               (in custom ce_module at level 97, nas custom ce_assign).
+                               (in custom verilog_module at level 97, nas custom verilog_assign).
 
 Notation "'task' tid ; st 'endtask'" := (VTaskDeclOne tid st)
-                                          (in custom ce_module at level 98,
-                                              tid custom ce_expr at level 97,
-                                              st custom ce_stmt at level 97).
+                                          (in custom verilog_module at level 98,
+                                              tid custom verilog_expr at level 97,
+                                              st custom verilog_stmt at level 97).
 
 Notation "'function' pd fid '(' ports ')' ; st 'endfunction'" := (VFuncDeclOne (VDataTypeOrImplicitImp pd) fid ports st)
-                                                                   (in custom ce_module at level 98,
-                                                                       pd custom ce_packeddim at level 97,
-                                                                       fid custom ce_expr at level 68,
-                                                                       ports custom ce_ports at level 68,
-                                                                       st custom ce_stmt at level 97).
+                                                                   (in custom verilog_module at level 98,
+                                                                       pd custom verilog_packeddim at level 97,
+                                                                       fid custom verilog_expr at level 68,
+                                                                       ports custom verilog_ports at level 68,
+                                                                       st custom verilog_stmt at level 97).
 
 Notation "'initial' st" := (VModuleCommonItemInitial st)
-                            (in custom ce_module at level 98, st custom ce_stmt at level 97).
+                            (in custom verilog_module at level 98, st custom verilog_stmt at level 97).
 Notation "'always' st" := (VModuleCommonItemAlways VAlways st)
-                            (in custom ce_module at level 98, st custom ce_stmt at level 97).
+                            (in custom verilog_module at level 98, st custom verilog_stmt at level 97).
 Notation "'always_comb' st" := (VModuleCommonItemAlways VAlwaysComb st)
-                                 (in custom ce_module at level 98, st custom ce_stmt at level 97).
+                                 (in custom verilog_module at level 98, st custom verilog_stmt at level 97).
 Notation "'always_latch' st" := (VModuleCommonItemAlways VAlwaysLatch st)
-                                  (in custom ce_module at level 98, st custom ce_stmt at level 97).
+                                  (in custom verilog_module at level 98, st custom verilog_stmt at level 97).
 Notation "'always_ff' st" := (VModuleCommonItemAlways VAlwaysFF st)
-                               (in custom ce_module at level 98, st custom ce_stmt at level 97).
+                               (in custom verilog_module at level 98, st custom verilog_stmt at level 97).
 
-Notation "i is" := (VModuleItemsCons i is) (in custom ce_module at level 99, right associativity).
+Notation "i is" := (VModuleItemsCons i is) (in custom verilog_module at level 99, right associativity).
 
 Notation "mid iid '(' pcs ')' ;" :=
   (VModuleInsOne mid VParamValueAssignsNil (VHierInsOne iid pcs))
-    (in custom ce_module at level 98,
-        mid custom ce_expr at level 50, (* NOTE: the level must be smaller than any levels used in ce_expr. *)
-        iid custom ce_expr at level 50, (* NOTE: the level must be smaller than any levels used in ce_expr. *)
-        pcs custom ce_portconn at level 97).
+    (in custom verilog_module at level 98,
+        mid custom verilog_expr at level 50, (* NOTE: the level must be smaller than any levels used in verilog_expr. *)
+        iid custom verilog_expr at level 50, (* NOTE: the level must be smaller than any levels used in verilog_expr. *)
+        pcs custom verilog_portconn at level 97).
 
 Notation "'generate' gmi 'endgenerate'" := (VGeneratedModuleInsO gmi)
-                                             (in custom ce_module at level 99,
-                                                 gmi custom ce_gen at level 99).
+                                             (in custom verilog_module at level 99,
+                                                 gmi custom verilog_gen at level 99).
 
 Notation "'assert' 'property' ( pe ) ;" :=
-  (VAssertProp (VPropSpecO None pe) None) (in custom ce_module at level 98, pe custom ce_pexpr at level 97).
+  (VAssertProp (VPropSpecO None pe) None) (in custom verilog_module at level 98, pe custom verilog_pexpr at level 97).
 Notation "'assume' 'property' ( pe ) ;" :=
-  (VAssumeProp (VPropSpecO None pe)) (in custom ce_module at level 98, pe custom ce_pexpr at level 97).
+  (VAssumeProp (VPropSpecO None pe)) (in custom verilog_module at level 98, pe custom verilog_pexpr at level 97).
 Notation "'cover' 'property' ( pe ) ;" :=
-  (VCoverProp (VPropSpecO None pe) None) (in custom ce_module at level 98, pe custom ce_pexpr at level 97).
+  (VCoverProp (VPropSpecO None pe) None) (in custom verilog_module at level 98, pe custom verilog_pexpr at level 97).
 
 Notation "'module' name '()' ; items 'endmodule'" :=
   (VModuleDeclAnsi name VParamPortsNil VAnsiPortDeclNil items)
-    (in custom ce_top at level 100, items custom ce_module at level 99).
+    (in custom verilog_top at level 100, items custom verilog_module at level 99).
 (** NOTE: interestingly ( ) cannot cover () *)
 Notation "'module' name ( ) ; items 'endmodule'" :=
   (VModuleDeclAnsi name VParamPortsNil VAnsiPortDeclNil items)
-    (in custom ce_top at level 100, items custom ce_module at level 99).
+    (in custom verilog_top at level 100, items custom verilog_module at level 99).
 Notation "'module' name '(' ports ')' ; items 'endmodule'" :=
   (VModuleDeclAnsi name VParamPortsNil ports items)
-    (in custom ce_top at level 100,
-        ports custom ce_ports at level 99, items custom ce_module at level 99).
+    (in custom verilog_top at level 100,
+        ports custom verilog_ports at level 99, items custom verilog_module at level 99).
 
 Notation "'module' name #( pds ) '()' ; items 'endmodule'" :=
   (VModuleDeclAnsi name pds VAnsiPortDeclNil items)
-    (in custom ce_top at level 100,
-        pds custom ce_paramports at level 99,
-        items custom ce_module at level 99).
+    (in custom verilog_top at level 100,
+        pds custom verilog_paramports at level 99,
+        items custom verilog_module at level 99).
 Notation "'module' name #( pds ) ( ) ; items 'endmodule'" :=
   (VModuleDeclAnsi name pds VAnsiPortDeclNil items)
-    (in custom ce_top at level 100,
-        pds custom ce_paramports at level 99,
-        items custom ce_module at level 99).
+    (in custom verilog_top at level 100,
+        pds custom verilog_paramports at level 99,
+        items custom verilog_module at level 99).
 Notation "'module' name #( pds ) '(' ports ')' ; items 'endmodule'" :=
   (VModuleDeclAnsi name pds ports items)
-    (in custom ce_top at level 100,
-        pds custom ce_paramports at level 99,
-        ports custom ce_ports at level 99,
-        items custom ce_module at level 99).
+    (in custom verilog_top at level 100,
+        pds custom verilog_paramports at level 99,
+        ports custom verilog_ports at level 99,
+        items custom verilog_module at level 99).
 
 (*! Tester *)
 
@@ -1521,45 +1522,45 @@ Module Tester.
   | module_a | module_ins_a
   | task_a | func_a.
 
-  Notation "'tester'" := tester (in custom ce_top).
+  Notation "'tester'" := tester (in custom verilog_top).
 
   (** NOTE: a hack to solve that the notation starting with '.' does not work at all. *)
 
-  Notation "'.net_a'" := net_a (in custom ce_portconnid).
-  Notation "'.net_b'" := net_b (in custom ce_portconnid).
-  Notation "'.net_c'" := net_c (in custom ce_portconnid).
-  Notation "'.param_a'" := param_a (in custom ce_portconnid).
-  Notation "'.param_b'" := param_b (in custom ce_portconnid).
-  Notation "'.param_c'" := param_c (in custom ce_portconnid).
-  Notation "'.module_a'" := module_a (in custom ce_portconnid).
-  Notation "'.module_ins_a'" := module_ins_a (in custom ce_portconnid).
+  Notation "'.net_a'" := net_a (in custom verilog_portconnid).
+  Notation "'.net_b'" := net_b (in custom verilog_portconnid).
+  Notation "'.net_c'" := net_c (in custom verilog_portconnid).
+  Notation "'.param_a'" := param_a (in custom verilog_portconnid).
+  Notation "'.param_b'" := param_b (in custom verilog_portconnid).
+  Notation "'.param_c'" := param_c (in custom verilog_portconnid).
+  Notation "'.module_a'" := module_a (in custom verilog_portconnid).
+  Notation "'.module_ins_a'" := module_ins_a (in custom verilog_portconnid).
 
-  Notation "'.net_a'" := net_a (in custom ce_expr).
-  Notation "'.net_b'" := net_b (in custom ce_expr).
-  Notation "'.net_c'" := net_c (in custom ce_expr).
-  Notation "'.param_a'" := param_a (in custom ce_expr).
-  Notation "'.param_b'" := param_b (in custom ce_expr).
-  Notation "'.param_c'" := param_c (in custom ce_expr).
-  Notation "'.module_a'" := module_a (in custom ce_expr).
-  Notation "'.module_ins_a'" := module_ins_a (in custom ce_expr).
+  Notation "'.net_a'" := net_a (in custom verilog_expr).
+  Notation "'.net_b'" := net_b (in custom verilog_expr).
+  Notation "'.net_c'" := net_c (in custom verilog_expr).
+  Notation "'.param_a'" := param_a (in custom verilog_expr).
+  Notation "'.param_b'" := param_b (in custom verilog_expr).
+  Notation "'.param_c'" := param_c (in custom verilog_expr).
+  Notation "'.module_a'" := module_a (in custom verilog_expr).
+  Notation "'.module_ins_a'" := module_ins_a (in custom verilog_expr).
 
-  Notation "'net_a'" := net_a (in custom ce_expr).
-  Notation "'net_b'" := net_b (in custom ce_expr).
-  Notation "'net_c'" := net_c (in custom ce_expr).
-  Notation "'param_a'" := param_a (in custom ce_expr).
-  Notation "'param_b'" := param_b (in custom ce_expr).
-  Notation "'param_c'" := param_c (in custom ce_expr).
-  Notation "'module_a'" := module_a (in custom ce_expr).
-  Notation "'module_ins_a'" := module_ins_a (in custom ce_expr).
-  Notation "'task_a'" := task_a (in custom ce_expr).
-  Notation "'func_a'" := func_a (in custom ce_expr).
+  Notation "'net_a'" := net_a (in custom verilog_expr).
+  Notation "'net_b'" := net_b (in custom verilog_expr).
+  Notation "'net_c'" := net_c (in custom verilog_expr).
+  Notation "'param_a'" := param_a (in custom verilog_expr).
+  Notation "'param_b'" := param_b (in custom verilog_expr).
+  Notation "'param_c'" := param_c (in custom verilog_expr).
+  Notation "'module_a'" := module_a (in custom verilog_expr).
+  Notation "'module_ins_a'" := module_ins_a (in custom verilog_expr).
+  Notation "'task_a'" := task_a (in custom verilog_expr).
+  Notation "'func_a'" := func_a (in custom verilog_expr).
 
   Definition VExprIdVId := @VExprId VId.
   Coercion VExprIdVId: VId >-> VExpr.
   Definition VPortIdsOneVId := @VPortIdsOne VId.
   Coercion VPortIdsOneVId: VId >-> VPortIds.
 
-Definition tester0: @VModuleDecl VId := #[
+Definition tester0: @VModuleDecl VId := verilog_top:(
 module tester
  #(parameter [0:0] param_a = 4'b0010,
    parameter param_c = 3
@@ -1578,9 +1579,9 @@ module tester
    output wire [31:0] net_a,
    output reg [31:0] net_a);
   module_a module_ins_a (.*, .net_a, .net_a(), .net_a(net_a), .*);
-endmodule].
+endmodule).
 
-Definition tester1: @VModuleDecl VId := #[
+Definition tester1: @VModuleDecl VId := verilog_top:(
 module tester ();
   module_a module_ins_a (.*, .net_a, .net_a(), .net_a(net_a), .*);
   parameter param_a = '0;
@@ -1602,9 +1603,9 @@ module tester ();
   wire net_a = 1'b1; wire net_b = param_c;
   wire net_a = param_c[param_a];
   integer param_a;
-endmodule].
+endmodule).
 
-Definition tester2: @VModuleDecl VId := #[
+Definition tester2: @VModuleDecl VId := verilog_top:(
 module tester ();
   assign net_a = 1'b0;
   assign net_b = (1+2'b1)-3*4/5;
@@ -1623,9 +1624,9 @@ module tester ();
   assign net_c = net_a[1'b1][1+2];
   assign net_c = net_a[0][net_b][2][31:0] inside {$signed(param_a), $unsigned(param_b + 1), param_c + 2};
   assign net_c = net_a[1'b1][1+2].net_b inside {2'b00, 2'b11};
-endmodule].
+endmodule).
 
-Definition tester3: @VModuleDecl VId := #[
+Definition tester3: @VModuleDecl VId := verilog_top:(
 module tester ();
   initial
     net_a = net_b;
@@ -1671,9 +1672,9 @@ module tester ();
       default: net_c <= param_c;
     endcase
   end
-endmodule].
+endmodule).
 
-Definition tester4: @VModuleDecl VId := #[
+Definition tester4: @VModuleDecl VId := verilog_top:(
 module tester ();
   task task_a;
     begin end
@@ -1699,9 +1700,9 @@ module tester ();
       net_b = param_b;
     end
   endgenerate
-endmodule].
+endmodule).
 
-Definition tester5: @VModuleDecl VId := #[
+Definition tester5: @VModuleDecl VId := verilog_top:(
 module tester ();
   assert property (net_a == net_b);
   assume property (param_c);
@@ -1712,7 +1713,7 @@ module tester ();
   assert property ((net_a or (net_b and net_c)) |-> net_a);
   assert property ((net_a |-> net_b) |=> net_c);
 endmodule
-].
+).
 
 End Tester.
 
