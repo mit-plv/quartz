@@ -242,7 +242,8 @@ Module expr.
     end.
 
   Declare Custom Entry quartz_expr.
-  Notation "quartz_expr:( e )" := e (e custom quartz_expr, format "'quartz_expr:(' e ')'").
+  Notation "quartz_expr:( e )" := e (e custom quartz_expr, only parsing).
+  Notation "# v" := (expr.Var v) (in custom quartz_expr at level 0, v constr at level 0, format "'#' v").
   Notation "$ v" := v (in custom quartz_expr at level 0, v constr at level 0, format "'$' v").
   Notation "x" := (x) (in custom quartz_expr, x global, only parsing).
   Notation "f x" := (f x) (in custom quartz_expr at level 10).
@@ -295,9 +296,10 @@ Module action.
   End WithState.
 
   Declare Custom Entry quartz_action.
-  Notation "quartz_action:( a )" := a (a custom quartz_action, format "'quartz_action:(' a ')'").
+  Notation "quartz_action:( a )" := a (a custom quartz_action, only parsing).
   Notation "$ v" := v (in custom quartz_action at level 0, v constr at level 0, format "'$' v").
   Notation "x" := (x) (in custom quartz_action, x global, only parsing).
+  Notation "f e" := (f e) (e custom quartz_expr, in custom quartz_action at level 10).
   Notation "a1 ; a2" := (Seq a1 a2)
     (in custom quartz_action at level 1, right associativity, format "'[v' a1 ; '/' a2 ']'").
   Notation "this!" := (ltac:(match goal with x : this _ |- _ => exact x end))
@@ -306,25 +308,6 @@ Module action.
     (in custom quartz_action at level 1, e custom quartz_expr).
 End action.
 Notation action := action.action (only parsing).
-
-Module example.
-  Section WithSubstitutionType.
-    Context {var : type -> Type}.
-
-    Local Coercion var : type >-> Sortclass.
-    Let exprVar {t} := expr.Var (var := var) (tx := t).
-
-    Definition add {n} (x y : Bits n) : expr var (Bits n) :=
-      expr.Binop binop.Plus (expr.Const x) (expr.Const y).
-
-  End WithSubstitutionType.
-
-  Lemma add_ok n (x y: Bits n) :
-    expr.interp (add x y) = Zmod.add x y.
-  Proof. trivial. Qed.
-
-End example.
-
 
 Module flat.
   Section WithSubstitutionType.
@@ -507,24 +490,23 @@ Module verilog.
 End verilog.
 
 Local Open Scope string_scope.
-Import typeWithHole VerilogSyntax.
-Compute verilog.lvalue id HOLE (VExprId "x").
-Compute verilog.lvalue id (Struct [("aa", Bool)] "bb" (Struct [("a", Bool)] "b" HOLE []) []) (VExprId "x").
 
 Module fifo1.
+  Section WithElementType.
   Import typeWithHole expr action.
-  Definition T := Bits 42.
-  Definition state := type.Struct [("len", Bool); ("data", T)].
-  Definition enq {var} (d : var T) : action var state Unit := quartz_action:(
-    $(UpdPut (C:=typeWithHole.Struct [] "len" HOLE [("data", T)]) tt true);
+  Context {t : type}.
+  Definition state := type.Struct [("len", Bool); ("data", t)].
+  Definition enq {var} (d : var t) : action var state Unit := quartz_action:(
+    $(UpdPut (C:=typeWithHole.Struct [] "len" HOLE [("data", t)]) tt true);
     $(UpdPut (C:=typeWithHole.Struct [("len", Bool)] "data" HOLE []) tt (Var d))).
   Definition len {var} (s : var state) : expr var Bool :=
-    Get (C:=typeWithHole.Struct [] "len" HOLE [("data", T)]) (Var s) tt.
-  Definition peek {var} (s : var state) : expr var T :=
+    Get (C:=typeWithHole.Struct [] "len" HOLE [("data", t)]) (Var s) tt.
+  Definition peek {var} (s : var state) : expr var t :=
     Get (C:=typeWithHole.Struct [("len", Bool)] "data" HOLE []) (Var s) tt.
-  Definition deq {var} : action var state T := quartz_action:(
-    $(UpdPut (C:=typeWithHole.Struct [] "len" HOLE [("data", T)]) tt false);
+  Definition deq {var} : action var state t := quartz_action:(
+    $(UpdPut (C:=typeWithHole.Struct [] "len" HOLE [("data", t)]) tt false);
     $(Ret peek)).
+  End WithElementType.
 End fifo1.
 
 Require Import DecimalString.
@@ -534,16 +516,17 @@ Definition gensym (st : gensym_st) (s : string) : string * gensym_st :=
   if orb (String.eqb "" s) (List.existsb (String.eqb s) st)
   then let s := s ++ "$" ++ NilEmpty.string_of_int (Z.to_int n) in (s, (cons s st, n+1))
   else (s, (cons s st, n)).
-Import expr action fifo1.
+Import VerilogSyntax expr action fifo1.
 Local Notation "verilog_stmt:( t ')'" := t (t custom verilog_stmt).
 Local Notation "$ x" := (x) (x constr at level 0, in custom verilog_expr at level 1).
+Local Notation V := VExprId.
 Compute let d:="d" in let s:="s" in
   verilog.stmts id gensym (flatten.action (quartz_action:(
-  $(enq d);(* void action method call *)
+  enq d;(* void action method call *)
   deq; (* non-void action method call *)
   return
     let v := len this! in (* value method call *)
-    $(expr.Var v)
+    #v
   )) s) (nil, 0) "FINAL_STATE" "FINAL_VALUE".
 
 (* ...which in slightly less verbose concrete syntax gives:
