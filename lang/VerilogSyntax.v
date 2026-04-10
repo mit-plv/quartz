@@ -877,26 +877,33 @@ End VModuleDecl.
 (** NOTE: Idk but operation conflicts in the VExpr level are avoided by setting literals
  * placed at level 2. *)
 Notation "'b bv" := (VIntegralBinary None bv)
-                      (in custom verilog_lit at level 0, bv constr at level 0).
+                      (in custom verilog_lit at level 0, bv constr at level 0,
+                         format "''b' bv").
 Notation "sz 'b bv" := (VIntegralBinary (Some sz) bv)
-                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr at level 0).
+                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr at level 0,
+                         format "sz ''b' bv").
 
 Notation "'o bv" := (VIntegralOctal None bv)
-                      (in custom verilog_lit at level 0, bv constr at level 0).
+                      (in custom verilog_lit at level 0, bv constr at level 0,
+                         format "''o' bv").
 Notation "sz 'o bv" := (VIntegralOctal (Some sz) bv)
-                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr at level 0).
+                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr at level 0,
+                         format "sz ''o' bv").
 
 Notation "'h bv" := (VIntegralHex None bv)
-                      (in custom verilog_lit at level 0, bv constr at level 0).
+                      (in custom verilog_lit at level 0, bv constr at level 0,
+                         format "''h' bv").
 Notation "sz 'h bv" := (VIntegralHex (Some sz) bv)
-                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr).
+                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr,
+                         format "sz ''h' bv").
 
 Notation "bv" := (VDecimalNumberNB bv)
                    (in custom verilog_lit at level 0, bv constr at level 0).
 Notation "'d bv" := (VDecimalNumberB None bv)
                       (in custom verilog_lit at level 0, bv constr at level 0).
 Notation "sz 'd bv" := (VDecimalNumberB (Some sz) bv)
-                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr).
+                         (in custom verilog_lit at level 0, sz constr at level 0, bv constr,
+                         format "sz ''d' bv").
 
 Notation "'0" := VZeros (in custom verilog_lit at level 0).
 Notation "'1" := VOnes (in custom verilog_lit at level 0).
@@ -990,8 +997,10 @@ Notation "'^' e" := (VExprUniOp VUniXor e) (in custom verilog_expr at level 77).
 Notation "'~^' e" := (VExprUniOp VUniXnor e) (in custom verilog_expr at level 77).
 Notation "'^~' e" := (VExprUniOp VUniXnor e) (in custom verilog_expr at level 77).
 
-(** NOTE: no dots (.) at all; see the hack used around the tester defined below. *)
+(** NOTE: no dots (.) for parsing; see the hack used around the tester defined below. *)
 Notation "pe ce" := (VExprHier pe ce) (in custom verilog_expr at level 72, left associativity).
+Notation "pe '.' ce" := (VExprHier pe ce) (in custom verilog_expr at level 72, left associativity,
+  format "pe '.' ce").
 
 Notation "'{}'" := (VExprPriConcat nil) (in custom verilog_expr at level 70).
 Notation "'{' '}'" := (VExprPriConcat nil) (in custom verilog_expr at level 70).

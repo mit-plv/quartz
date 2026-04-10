@@ -1,7 +1,11 @@
-From Stdlib Require Import BinInt Bits Vector.
+From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
+From Stdlib Require Import BinInt Bits.
 From Stdlib Require Import String List.
+From Stdlib Require Vector.
 Import ListNotations.
 Local Coercion Zmod.unsigned : Zmod >-> Z.
+
+Require Import ident_to_string.
 
 Open Scope Z_scope.
 
@@ -13,6 +17,7 @@ Module type.
   | Pair (_ _ : type)
   | Struct (_ : list (string * type))
   | Array (t: type) (sz: nat).
+  Notation Unit := (Bits 0) (only parsing).
 
   Fixpoint interp t : Type :=
     match t with
@@ -70,13 +75,39 @@ Module type.
         match eq_dec a b, PeanoNat.Nat.eq_dec n m with | left _, left _ => left _ | _, _ => right _ end
     | _, _ => right _
     end.
-  all : abstract congruence.
+    all : subst; trivial; abstract congruence.
   Defined.
-End type.
 
+  Ltac2 Type exn ::= [ ReifyUnknown (constr) | InductiveNotAPrimitiveRecord (constr) ].
+  Ltac2 rec reify t :=
+    lazy_match! t with
+    | type.interp ?t => t
+    | bool => 'type.Bool
+    | bits ?n => constr:(type.Bits $n)
+    | prod ?t1 ?t2 =>
+        let rt1 := reify t1 in
+        let rt2 := reify t2 in
+        constr:(type.Pair $rt1 $rt2)
+    | Vector.t ?t ?n =>
+        let rt := reify t in
+        constr:(type.Array $rt $n)
+    | _ => match UConstr.kind t with UConstr.Ind ind inst =>
+      let pp := match Ind.get_projections (Ind.data ind) with Some pp => pp | _ => Control.throw (InductiveNotAPrimitiveRecord t) end in
+      let r := Array.fold_right (fun pp acc =>
+          let c := Option.get (Proj.to_constant pp) in
+          let n := constr_string_of_string (Ident.to_string (List.last (Env.path (Std.ConstRef c)))) in
+          let e := UConstr.make (UConstr.Constant c inst) in
+          let t := match UConstr.kind (Constr.type e) with UConstr.Prod _ t => t | _ => 'Empty_set end in
+          let rt := reify t in
+          constr:(cons ($n, $rt) $acc)
+        ) pp constr:(@nil (String.string * type)) in
+      constr:(type.Struct $r)
+    | _ => Control.throw (ReifyUnknown t)
+  end end.
+
+  Notation reify'' state := (ltac2:(let r := type.reify (pretype state) in exact $r)) (only parsing).
+End type.
 Import type.
-Notation Unit := (Bits 0) (only parsing).
-Notation unit_value := (bits.of_Z _ 0) (only parsing).
 
 Module struct.
   Notation struct := type.struct (only parsing).
@@ -107,6 +138,23 @@ Module struct.
   Proof. cbv [get eq_dec eq_rect String.eqb Ascii.eqb Bool.eqb]. trivial. Qed.
   Example get_ab_c : @get [("a", Bits 7); ("b", Bool)] "c" Bool = fun r => inhabited Bool.
   Proof. cbv [get eq_dec eq_rect String.eqb Ascii.eqb Bool.eqb]. trivial. Qed.
+  Example get_ab_a : @get [("a", Bits 7); ("b", Bool)] "a" (Bits 7) = fun r => fst r.
+  Proof. cbv [get eq_dec eq_rect String.eqb Ascii.eqb Bool.eqb
+              Z.eq_dec Z_rec Z_rect sumbool_rec sumbool_rect
+              Pos.eq_dec positive_rec positive_rect eq_ind_r eq_ind eq_sym ]. trivial. Qed.
+
+  Ltac2 lower v :=
+    match UConstr.kind (Constr.type v) with
+    | UConstr.Ind ind inst =>
+      let arrproj := Option.get (Ind.get_projections (Ind.data ind)) in
+      Array.fold_right (fun p acc =>
+        let c := Option.get (Proj.to_constant p) in
+        let e := UConstr.make (UConstr.Constant c inst) in
+        let e := constr:($e $v) in
+        constr:(pair $e $acc)
+        ) arrproj 'tt
+    | _ => Control.throw (type.ReifyUnknown (Constr.type v))
+    end.
 End struct.
 
 Module unop.
@@ -199,6 +247,29 @@ Module typeWithHole.
     | Array sz t => fun _ r i v => Vector__mod r (fst i) (fun r => updField _ _ r (snd i) v)
     end.
   Arguments updField {_ _}.
+
+  Ltac2 reify_field p0c :=
+    match UConstr.kind p0c with
+    | UConstr.Constant c0 inst =>
+      match Proj.of_constant c0 with
+      | Some p0 =>
+        lazy_match! type.reify (UConstr.make (UConstr.Ind (Proj.ind p0) inst)) with
+        | type.Struct ?rs =>
+    let rec firstn n l := if Int.le n 0
+      then lazy_match! l with nil => l | @cons ?t _ _ => constr:(@nil $t) end
+      else lazy_match! l with @cons ?t ?x ?l => let l := firstn (Int.sub n 1) l in constr:(@cons $t $x $l) end in
+    let rec skipn n l := if Int.le n 0 then l else lazy_match! l with cons _ ?l => skipn (Int.sub n 1) l end in
+    let hd l := lazy_match! l with @nil _ => l | @cons _ ?x _ => x end in
+          let l := firstn (Proj.index p0) rs in
+          let (n, t) := lazy_match! hd (skipn (Proj.index p0) rs) with (?n, ?t) => (n, t) end in
+          let r := skipn (Int.add 1 (Proj.index p0)) rs in
+          (constr:(Struct $l $n HOLE $r), t)
+        | _ => Control.throw (type.ReifyUnknown p0c)
+        end
+      | _ => Control.throw (type.ReifyUnknown p0c)
+      end
+    | _ => Control.throw (type.ReifyUnknown p0c)
+    end.
 End typeWithHole.
 Notation typeWithHole :=typeWithHole.typeWithHole (only parsing).
 
@@ -208,7 +279,6 @@ Coercion typeWithHole.indices : typeWithHole >-> type.
 Module expr.
   Section WithSubstitutionType.
     Context {var: type -> Type}.
-    Definition this t := var t.
 
     Inductive expr : type -> Type :=
     | Var {tx: type} (x: var tx) : expr tx
@@ -221,7 +291,7 @@ Module expr.
     | Upd {C : typeWithHole} {t} (r : expr (C t)) (i : expr C)
        (v : var t -> expr t) : expr (typeWithHole.plug C t).
 
-    Definition tt := @Const Unit unit_value.
+    Definition tt := @Const Unit Zmod.zero.
     Definition true := @Const Bool true.
     Definition false := @Const Bool false.
     Definition zero {n} := @Const (Bits n) Zmod.zero.
@@ -246,10 +316,15 @@ Module expr.
   Notation "$ v" := v (in custom quartz_expr at level 0, v constr at level 0, format "'$' v").
   Notation "x" := (x) (in custom quartz_expr, x global, only parsing).
   Notation "f x" := (f x) (in custom quartz_expr at level 10).
+  Notation "x == y" := (Binop (binop.EqBits) x y) (in custom quartz_expr at level 70).
   Notation "'let' x := e1 'in' e2"        := (Let "$let" e1 (fun x => e2))
-   (in custom quartz_expr at level 100, x constr at level 0, e1 custom quartz_expr, e2 custom quartz_expr).
-  Notation "this!" := (ltac:(match goal with x : this _ |- _ => exact x end))
+    (in custom quartz_expr at level 200, x constr at level 0, e1 custom quartz_expr, e2 custom quartz_expr).
+
+  Definition this (var : type -> Type) t := var t.
+  Notation "this!" := (ltac:(match goal with x : @this _ _ |- ?g => exact (Var x) || exact x end))
     (in custom quartz_expr, only parsing).
+  Notation "v 'at' f" := (ltac2:(let (c, t) := typeWithHole.reify_field (pretype f) in let v := pretype v in eexact (Get (C:=$c) (t:=$t) $v tt)))
+    (in custom quartz_expr at level 10, f global, v custom quartz_expr, only parsing).
 End expr.
 Notation expr := expr.expr.
 
@@ -281,7 +356,7 @@ Module action.
     Fixpoint interp {s t} (e: action type.interp s t) : s -> s * t :=
       match e in action _ s t return s -> s * t with
       | Ret e => fun s => (s, expr.interp (e s))
-      | Put e => fun s => let v := expr.interp (e s) in (v, unit_value)
+      | Put e => fun s => let v := expr.interp (e s) in (v, Zmod.zero)
       | Bind _ a aC => fun s =>
           let '(s, v) := interp a s in
           interp (aC v) s
@@ -299,9 +374,13 @@ Module action.
   Notation "$ v" := v (in custom quartz_action at level 0, v constr at level 0, format "'$' v").
   Notation "x" := (x) (in custom quartz_action, x global, only parsing).
   Notation "f e" := (f e) (e custom quartz_expr, in custom quartz_action at level 10).
+  Notation "f = v" := (UpdPut (C:=ltac2:(let (r, _) := typeWithHole.reify_field (pretype f) in exact $r)) tt v)
+    (in custom quartz_action, f global, v custom quartz_expr, only parsing).
+  Notation "'let' x '<-' a1 'in' a2"        := (Bind "$bind" a1 (fun x => a2))
+    (in custom quartz_action at level 200, x constr at level 0, a1 custom quartz_action, a2 custom quartz_action).
   Notation "a1 ; a2" := (Seq a1 a2)
     (in custom quartz_action at level 1, right associativity, format "'[v' a1 ; '/' a2 ']'").
-  Notation "this!" := (ltac:(match goal with x : this _ |- _ => exact x end))
+  Notation "this!" := (ltac:(match goal with x : @this _ _ |- _ => exact (Var x) || exact x end))
     (in custom quartz_action, only parsing).
   Notation "'return' e" := (Ret (fun _ => e))
     (in custom quartz_action at level 1, e custom quartz_expr).
@@ -386,7 +465,7 @@ Module flatten.
         flat.bind (expr (e s)) (fun e => flat.Ret (flat.Var s, e))
       | action.Put e => fun s =>
         flat.bind (expr (e s)) (fun e =>
-        flat.Ret (e, @flat.Const _ Unit unit_value ))
+        flat.Ret (e, @flat.Const _ Unit Zmod.zero ))
       | action.Bind x a aC => fun s =>
         flat.bind (action a s) (fun '(es, ev) =>
         flat.let_ (x++"$s") es (fun s =>
@@ -454,9 +533,15 @@ Module verilog.
       | _ => ltac:(admit)
       end.
 
-    Definition unop {a b} (u : unop a b) : VUniOp :=
-      match u with
+    Definition unop {a b} (o : unop a b) : VUniOp :=
+      match o with
       | unop.Not => VUniNot
+      end.
+
+    Definition binop {a b c} (o : binop a b c) : VBinOp :=
+      match o with
+      | binop.EqBits => VBinEq
+      | _ => ltac:(admit)
       end.
 
     Fixpoint expr {t} (e : expr var t) : @VExpr VId :=
@@ -464,8 +549,8 @@ Module verilog.
       | Var x => VExprId x
       | Const c => const c
       | Cond c t f => VExprCond (@expr _ c) (@expr _ t) (@expr _ f)
-      | Unop u e => VExprUniOp (unop u) (@expr _ e)
-      | Binop _ _ _ => ltac:(admit)
+      | Unop o e => VExprUniOp (unop o) (@expr _ e)
+      | Binop o a b => VExprBinOp (binop o) (@expr _ a) (@expr _ b)
       | @Get _ c _ e TODO_i => lvalue c (expr e)
       end.
 
@@ -489,22 +574,31 @@ Module verilog.
 End verilog.
 
 Local Open Scope string_scope.
-
-Module fifo1.
+Module fifo1. (* Example module *)
   Section WithElementType.
   Import typeWithHole expr action.
-  Context {t : type}.
-  Definition state := type.Struct [("len", Bool); ("data", t)].
-  Definition enq {var} (d : var t) : action var state Unit := quartz_action:(
-    $(UpdPut (C:=typeWithHole.Struct [] "len" HOLE [("data", t)]) tt true);
-    $(UpdPut (C:=typeWithHole.Struct [("len", Bool)] "data" HOLE []) tt (Var d))).
-  Definition len {var} (s : var state) : expr var Bool :=
-    Get (C:=typeWithHole.Struct [] "len" HOLE [("data", t)]) (Var s) tt.
-  Definition peek {var} (s : var state) : expr var t :=
-    Get (C:=typeWithHole.Struct [("len", Bool)] "data" HOLE []) (Var s) tt.
-  Definition deq {var} : action var state t := quartz_action:(
-    $(UpdPut (C:=typeWithHole.Struct [] "len" HOLE [("data", t)]) tt false);
-    $(Ret peek)).
+  Context {t : type}. (* Compile-time module parameter *)
+
+  #[projections(primitive)]
+  Record state := { len : bool; data : t }.
+
+  (* Value method -- does not modiy, state can be used inside [expr] *)
+  Definition peek {var} (s : this var (type.reify'' state)) : expr var t := quartz_expr:(
+    this! at data).
+
+  (* Action method -- modifies state, return Unit *)
+  Definition enq {var} (d : var t) : action var (type.reify'' state) Unit := quartz_action:(
+    len = true;
+    data = #d).
+
+  (* ActionValue method -- modifies state, returns a value *)
+  Definition deq {var} : action var (type.reify'' state) t := quartz_action:(
+    len = false;
+    return this! at data).
+
+  (* For specifications, compute the representation of native-record [state] *)
+  Definition rep (v : state) : type.reify'' state :=
+    ltac2:(let t := struct.lower &v in eexact $t).
   End WithElementType.
 End fifo1.
 
@@ -519,44 +613,46 @@ Import VerilogSyntax expr action fifo1.
 Local Notation "verilog_stmt:( t ')'" := t (t custom verilog_stmt).
 Local Notation "$ x" := (x) (x constr at level 0, in custom verilog_expr at level 1).
 Local Notation V := VExprId.
-Compute let d:="d" in let s:="s" in
+Compute let INPUT:="INPUT" in let s:="s" in
   verilog.stmts id gensym (flatten.action (quartz_action:(
-  enq d;(* void action method call *)
-  deq; (* non-void action method call *)
-  return
-    let v := len this! in (* value method call *)
-    #v
-  )) s) (nil, 0) "FINAL_STATE" "FINAL_VALUE".
+    enq INPUT;
+    let x <- deq in
+    return
+      let v := peek this! in (* value method call *)
+      #v == #x
+  )) s) (nil, 0) "STATE" "OUTPUT".
 
 (* ...which in slightly less verbose concrete syntax gives:
+tr -dc "[:alnum:]_ \n=$'."|sed s/verilog_stmt//g|sed s/VExprId//g|sed -e 's/\s\s*/ /g'|sed 's/\$ //g'|sed 's/V //g'
 $aupd = s.len
 $0 = s
 $0.len = 1'b1
 $Seq = 0'd0
 $aupd$1 = $0.data
 $2 = $0
-$2.data = d
+$2.data = INPUT
 $Seq$3 = 0'd0
 $aupd$4 = $2.len
 $5 = $2
 $5.len = 1'b0
 $Seq$6 = 0'd0
-$Seq$7 = $5.data
-$let = $5.len
+$bind = $5.data
+$let = $5.data
 FINAL_STATE = $5
-FINAL_VALUE = $let
+OUTPUT = $let == $bind
  *)
 
 (* NEXT STEPS:
-   - Verilog
-     - Expr -> always_comb verilog blocks
+   - Flesh out nested-field and array-index access
+   - Test (and likely finish up) method calls with nontrivial wrapper modules
+   - Fill in remaining cases of translation to verilog
+   - Print verilog abstract syntax as concrete syntax
      - Reference: https://github.com/Cherified/Guru/blob/main/PrettyPrinter/CodePrinter.hs
-   - Notations :) --> customEntry fun
+   - More notations (Binops, action let, ...)
      - Reference: https://github.com/mit-plv/bedrock2/blob/master/bedrock2/src/bedrock2/NotationsCustomEntry.v#L9
      - Reference: https://github.com/mit-plv/fiat2/blob/main/fiat2/src/fiat2/Notations.v#L158
      - Reference: VerilogSyntax.v
-   - Pretty Gallina reflection/verification stuffs
-     - Reification of lvalues/holes
-       - Ltac2 silliness
+   - Investigate whether it's worth trying to generate fewer intermediate assignments
+   - Prove compiler correctness
 *)
 
