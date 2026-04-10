@@ -378,9 +378,10 @@ Module flatten.
         flat.bind (expr (e s)) (fun e =>
         flat.Ret (e, @flat.Const _ Unit unit_value ))
       | action.Bind x a aC => fun s =>
-        flat.bind (action a s) (fun '(s', ev) =>
+        flat.bind (action a s) (fun '(es, ev) =>
+        flat.let_ (x++"$s") es (fun s =>
         flat.let_ x ev (fun v =>
-        action (aC v) s))
+        action (aC v) s)))
       | action.Upd ei fv => fun s =>
         flat.bind (expr (ei s)) (fun ei =>
         flat.let_ "$aupd" (flat.Get (flat.Var s) ei) (fun fs =>
@@ -532,17 +533,17 @@ $aupd = s.len
 $0 = s
 $0.len = 1'b1
 _unit = 0'd0
-$aupd$1 = s.data
-$2 = s
+$aupd$1 = $0.data
+$2 = $0
 $2.data = d
 _ret1 = 0'd0
-$aupd$3 = s.len
-$4 = s
+$aupd$3 = $2.len
+$4 = $2
 $4.len = 1'b0
 _unit$5 = 0'd0
-_ret2 = s.data
-_let = s.len
-FINAL_STATE = s
+_ret2 = $4.data
+_let = $4.len
+FINAL_STATE = $4
 FINAL_VALUE = _let
  *)
 
