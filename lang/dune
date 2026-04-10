@@ -1,5 +1,5 @@
 (coq.theory
  (package quartz)
  (name quartz.lang)
- (theories Stdlib stdpp Ltac2)
+ (theories Stdlib Ltac2)
 )

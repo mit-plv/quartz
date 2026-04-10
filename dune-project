@@ -10,8 +10,6 @@
  (synopsis "")
  (depends 
   (coq (>= 9.0))
-  (coq-stdpp (>= 1.11.0))
-  (coq-stdpp-bitvector (>= 1.11.0))
   (rocq-stdlib (>= 9.0.0))
  )
 )
