@@ -209,6 +209,8 @@ Coercion typeWithHole.indices : typeWithHole >-> type.
 Module expr.
   Section WithSubstitutionType.
     Context {var: type -> Type}.
+    Definition this t := var t.
+
     Inductive expr : type -> Type :=
     | Var {tx: type} (x: var tx) : expr tx
     | Const {tc: type} (c: type.interp tc) : expr tc
@@ -219,6 +221,11 @@ Module expr.
     | Get {C : typeWithHole} {t} (r : expr (C t)) (i : expr C) : expr t
     | Upd {C : typeWithHole} {t} (r : expr (C t)) (i : expr C)
        (v : var t -> expr t) : expr (typeWithHole.plug C t).
+
+    Definition tt := @Const Unit unit_value.
+    Definition true := @Const Bool true.
+    Definition false := @Const Bool false.
+    Definition zero {n} := @Const (Bits n) Zmod.zero.
   End WithSubstitutionType.
   Arguments expr : clear implicits.
 
@@ -234,25 +241,40 @@ Module expr.
     | Upd r i fv => typeWithHole.updField (interp r) (interp i) (fun v => interp (fv v))
     end.
 
+  Declare Custom Entry quartz_expr.
+  Notation "quartz_expr:( e )" := e (e custom quartz_expr, format "'quartz_expr:(' e ')'").
+  Notation "$ v" := v (in custom quartz_expr at level 0, v constr at level 0, format "'$' v").
+  Notation "x" := (x) (in custom quartz_expr, x global, only parsing).
+  Notation "f x" := (f x) (in custom quartz_expr at level 10).
+  Notation "'let' x := e1 'in' e2"        := (Let "$let" e1 (fun x => e2))
+   (in custom quartz_expr at level 100, x constr at level 0, e1 custom quartz_expr, e2 custom quartz_expr).
+  Notation "this!" := (ltac:(match goal with x : this _ |- _ => exact x end))
+    (in custom quartz_expr, only parsing).
 End expr.
-
 Notation expr := expr.expr.
 
 Module action.
+  Import expr.
   Section WithSubstitutionType.
     Context {var: type -> Type}.
+    Local Notation this := (@expr.this var).
+    Local Notation expr := (@expr.expr var).
 
-    Import expr.
     Inductive action : type -> type -> Type :=
-    | Ret {s t} (e : var s -> expr var t) : action s t
-    | Put {s} (e : var s -> expr var s) : action s Unit
+    | Ret {s t} (e : this s -> expr t) : action s t
+    | Put {s} (e : this s -> expr s) : action s Unit
     | Bind {s} (name_hint : string) {tx} (a : action s tx) {t}
       (aC : var tx -> action s t) : action s t
-    | Cond {s t} (_ : var s -> expr var Bool) (a b : action s t) : action s t
-    | Upd {C : typeWithHole} {t r} (s := C t) (i : var s -> expr var C) (fv : var s -> action t r) : action s r
+    | Cond {s t} (_ : this s -> expr Bool) (a b : action s t) : action s t
+    | Upd {C : typeWithHole} {t r} (s := C t) (i : this s -> expr C) (fv : this s -> action t r) : action s r
     .
-  End WithSubstitutionType.
 
+    Definition UpdPut {C : typeWithHole} {t} (i : expr C) (v : expr t) :=
+      Upd (C:=C) (t:=t) (fun _ => i) (fun _ => Put (fun _ => v)).
+
+    Definition Seq {s a b} (a : action s a) (b : action s b) :=
+      Bind "$Seq" a (fun _ => b).
+  End WithSubstitutionType.
   Arguments action : clear implicits.
 
   Section WithState.
@@ -271,6 +293,17 @@ Module action.
           (typeWithHole.updField s i (fun _ => ms), v)
       end.
   End WithState.
+
+  Declare Custom Entry quartz_action.
+  Notation "quartz_action:( a )" := a (a custom quartz_action, format "'quartz_action:(' a ')'").
+  Notation "$ v" := v (in custom quartz_action at level 0, v constr at level 0, format "'$' v").
+  Notation "x" := (x) (in custom quartz_action, x global, only parsing).
+  Notation "a1 ; a2" := (Seq a1 a2)
+    (in custom quartz_action at level 1, right associativity, format "'[v' a1 ; '/' a2 ']'").
+  Notation "this!" := (ltac:(match goal with x : this _ |- _ => exact x end))
+    (in custom quartz_action, only parsing).
+  Notation "'return' e" := (Ret (fun _ => e))
+    (in custom quartz_action at level 1, e custom quartz_expr).
 End action.
 Notation action := action.action (only parsing).
 
@@ -290,12 +323,7 @@ Module example.
     expr.interp (add x y) = Zmod.add x y.
   Proof. trivial. Qed.
 
-  (* TODO: struct example *)
 End example.
-
-Module notations.
-
-End notations.
 
 
 Module flat.
@@ -487,26 +515,16 @@ Module fifo1.
   Import typeWithHole expr action.
   Definition T := Bits 42.
   Definition state := type.Struct [("len", Bool); ("data", T)].
-  Definition enq {var} (d : var T) : action var state Unit :=
-    Bind "_unit"
-    (Upd (C:=typeWithHole.Struct [] "len" HOLE [("data", T)])
-         (fun _ => @Const _ Unit unit_value)
-         (fun _ => Put (fun _ => @Const _ Bool true))) (fun _ =>
-    (Upd (C:=typeWithHole.Struct [("len", Bool)] "data" HOLE [])
-         (fun _ => @Const _ Unit unit_value)
-         (fun _ => Put (fun _ => Var d)))).
+  Definition enq {var} (d : var T) : action var state Unit := quartz_action:(
+    $(UpdPut (C:=typeWithHole.Struct [] "len" HOLE [("data", T)]) tt true);
+    $(UpdPut (C:=typeWithHole.Struct [("len", Bool)] "data" HOLE []) tt (Var d))).
   Definition len {var} (s : var state) : expr var Bool :=
-    Get (C:=typeWithHole.Struct [] "len" HOLE [("data", T)])
-      (Var s) (@Const _ Unit unit_value).
+    Get (C:=typeWithHole.Struct [] "len" HOLE [("data", T)]) (Var s) tt.
   Definition peek {var} (s : var state) : expr var T :=
-    Get (C:=typeWithHole.Struct [("len", Bool)] "data" HOLE [])
-      (Var s) (@Const _ Unit unit_value).
-  Definition deq {var} : action var state T :=
-    Bind "_unit"
-    (Upd (C:=typeWithHole.Struct [] "len" HOLE [("data", T)])
-         (fun _ => @Const _ Unit unit_value)
-         (fun _ => Put (fun _ => @Const _ Bool false))) (fun _ =>
-    Ret peek).
+    Get (C:=typeWithHole.Struct [("len", Bool)] "data" HOLE []) (Var s) tt.
+  Definition deq {var} : action var state T := quartz_action:(
+    $(UpdPut (C:=typeWithHole.Struct [] "len" HOLE [("data", T)]) tt false);
+    $(Ret peek)).
 End fifo1.
 
 Require Import DecimalString.
@@ -516,17 +534,17 @@ Definition gensym (st : gensym_st) (s : string) : string * gensym_st :=
   if orb (String.eqb "" s) (List.existsb (String.eqb s) st)
   then let s := s ++ "$" ++ NilEmpty.string_of_int (Z.to_int n) in (s, (cons s st, n+1))
   else (s, (cons s st, n)).
-Import action fifo1.
+Import expr action fifo1.
 Local Notation "verilog_stmt:( t ')'" := t (t custom verilog_stmt).
 Local Notation "$ x" := (x) (x constr at level 0, in custom verilog_expr at level 1).
 Compute let d:="d" in let s:="s" in
-  verilog.stmts id gensym (flatten.action (
-  Bind "_ret1" (enq d) (fun _ => (* void action method call *)
-  Bind "_ret2" (deq) (fun _ => (* non-void action method call *)
-  Ret (fun s =>
-    expr.Let "_let" (len s) (fun v => (* value method call *)
-    expr.Var v))
-  ))) s) (nil, 0) "FINAL_STATE" "FINAL_VALUE".
+  verilog.stmts id gensym (flatten.action (quartz_action:(
+  $(enq d);(* void action method call *)
+  deq; (* non-void action method call *)
+  return
+    let v := len this! in (* value method call *)
+    $(expr.Var v)
+  )) s) (nil, 0) "FINAL_STATE" "FINAL_VALUE".
 
 (* ...which in slightly less verbose concrete syntax gives:
 $aupd = s.len
