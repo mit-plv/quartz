@@ -80,7 +80,6 @@ Notation unit_value := (bits.of_Z _ 0) (only parsing).
 
 Module struct.
   Notation struct := type.struct (only parsing).
-  Search NoDup bool.
 
   Definition has (s : struct) (n : string) (t : type) : bool :=
     existsb (fun nt => String.eqb (fst nt) n && type_beq (snd nt) t)%bool s.
@@ -533,19 +532,19 @@ Compute let d:="d" in let s:="s" in
 $aupd = s.len
 $0 = s
 $0.len = 1'b1
-_unit = 0'd0
+$Seq = 0'd0
 $aupd$1 = $0.data
 $2 = $0
 $2.data = d
-_ret1 = 0'd0
-$aupd$3 = $2.len
-$4 = $2
-$4.len = 1'b0
-_unit$5 = 0'd0
-_ret2 = $4.data
-_let = $4.len
-FINAL_STATE = $4
-FINAL_VALUE = _let
+$Seq$3 = 0'd0
+$aupd$4 = $2.len
+$5 = $2
+$5.len = 1'b0
+$Seq$6 = 0'd0
+$Seq$7 = $5.data
+$let = $5.len
+FINAL_STATE = $5
+FINAL_VALUE = $let
  *)
 
 (* NEXT STEPS:
