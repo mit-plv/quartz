@@ -3,7 +3,6 @@ From Stdlib Require Import BinInt Bits.
 From Stdlib Require Import String List.
 From Stdlib Require Vector.
 Import ListNotations.
-Local Coercion Zmod.unsigned : Zmod >-> Z.
 
 Require Import ident_to_string.
 
@@ -172,12 +171,20 @@ End Vector.
 
 Module unop.
   Inductive unop : type -> type -> Type :=
-  | Not {n} : unop (Bits n) (Bits n)
+  | IsZero {n} : unop (Bits n) Bool
+  | Not {n} : unop (Bits n) (Bits n) (* bitwise completement *)
+  | Opp {n} : unop (Bits n) (Bits n) (* arithmetic negation *)
+  | UnsignedResize {n m} : unop (Bits n) (Bits m) (* zero-extend or truncate *)
+  | SignedResize {n m} : unop (Bits n) (Bits m) (* sign-extend or truncate *)
   .
 
   Definition interp {a b} (op: unop a b) : type.interp a -> type.interp b :=
     match op in unop a b return a -> b with
+    | IsZero => Zmod.eqb Zmod.zero
     | Not => Zmod.not
+    | Opp => Zmod.opp
+    | UnsignedResize => fun v => bits.of_Z _ (Zmod.unsigned v)
+    | SignedResize => fun v => bits.of_Z _ (Zmod.signed v)
     end.
 End unop.
 Notation unop := unop.unop (only parsing).
@@ -186,24 +193,24 @@ Module binop.
   Inductive compare := cLt | cGt | cLe | cGe.
 
   Inductive binop : type -> type -> type -> Type :=
-  | Plus {n} : binop (Bits n) (Bits n) (Bits n)
+  | Add {n} : binop (Bits n) (Bits n) (Bits n)
   | And {n} : binop (Bits n) (Bits n) (Bits n)
   | Or {n} : binop (Bits n) (Bits n) (Bits n)
-  | Lsl {n} : binop (Bits n) (Bits n) (Bits n)
-  | Lsr {n} : binop (Bits n) (Bits n) (Bits n)
-  | Asr {n} : binop (Bits n) (Bits n) (Bits n)
+  | Slu {n m} : binop (Bits n) (Bits m) (Bits n)
+  | Sru {n m} : binop (Bits n) (Bits m) (Bits n)
+  | Srs {n m} : binop (Bits n) (Bits m) (Bits n)
   | EqBits {n} : binop (Bits n) (Bits n) Bool
   | Compare (signed: bool) (c: compare) {n} : binop (Bits n) (Bits n) Bool
   | MkPair {a b: type} : binop a b (Pair a b).
 
   Definition interp {a b c} (op: binop a b c) : a -> b -> c :=
     match op in binop a b c return a -> b -> c with
-    | Plus => Zmod.add
+    | Add => Zmod.add
     | And => Zmod.and
     | Or => Zmod.or
-    | Lsl => fun a b => Zmod.slu a b
-    | Lsr => fun a b => Zmod.sru a b
-    | Asr => fun a b => Zmod.srs a b
+    | Slu => fun a b => Zmod.slu a (Zmod.unsigned b)
+    | Sru => fun a b => Zmod.sru a (Zmod.unsigned b)
+    | Srs => fun a b => Zmod.srs a (Zmod.unsigned b)
     | EqBits => Zmod.eqb
     | Compare signed c => fun a b =>
         match c with cLt => Z.ltb | cGt => Z.gtb | cLe => Z.leb | cGe => Z.geb end
@@ -245,7 +252,7 @@ Module typeWithHole.
     | PairR a b => fun _ r i => get b _ (snd r) i
     | Struct _ n t _ => fun _ r i => get t _ (struct.get n _ r) i
     | Array sz t _ => fun _ r i => get t _
-        (List.nth_default (default _) (Vector.to_list r) (Z.to_nat (fst i))) (snd i)
+        (List.nth_default (default _) (Vector.to_list r) (Z.to_nat (Zmod.unsigned (fst i)))) (snd i)
     end.
   Arguments get {_ _}.
 
@@ -256,7 +263,7 @@ Module typeWithHole.
     | PairR a b => fun _ r i v => (fst r, upd b _ (snd r) i v)
     | Struct _ n t _ => fun _ r i v => struct.upd n _ r v
     | Array sz t _ => fun _ r i v =>
-        Vector.upd r (Z.to_nat (fst i)) (fun r => upd _ _ r (snd i) v)
+        Vector.upd r (Z.to_nat (Zmod.unsigned (fst i))) (fun r => upd _ _ r (snd i) v)
     end.
   Arguments upd {_ _}.
 
@@ -523,11 +530,12 @@ Module verilog.
   Local Unset Asymmetric Patterns.
   Section WithVerilogIdentifier.
     Context {VId : Set} (field_name : string -> VId).
+    Local Notation VExpr := (VExpr (VId:=VId)).
     Context {gensym_state : Type} (gensym : gensym_state -> string -> VId * gensym_state).
     Let var (_ : type) := VId.
 
-    Fixpoint const {t : type} : t -> @VExpr VId :=
-      match t return t -> @VExpr VId with
+    Fixpoint const {t : type} : t -> VExpr :=
+      match t return t -> VExpr with
       | Bool => fun v => VExprPriLiteral (VIntegralBinary (Some 1) (Z.b2z v))
       | Bits n => fun v =>
           VExprPriLiteral (
@@ -537,7 +545,7 @@ Module verilog.
       | _ => fun _ => ltac:(admit)
       end.
 
-    Fixpoint lvalue (c : typeWithHole) (e : @VExpr VId) : @VExpr VId :=
+    Fixpoint lvalue (c : typeWithHole) (e : VExpr) : VExpr :=
       match c with
       | typeWithHole.HOLE => e
       | typeWithHole.Struct _ n c _ =>
@@ -545,9 +553,16 @@ Module verilog.
       | _ => ltac:(admit)
       end.
 
-    Definition unop {a b} (o : unop a b) : VUniOp :=
+    Definition unop {a b} (o : unop a b) : VExpr -> VExpr :=
       match o with
-      | unop.Not => VUniNot
+      | unop.IsZero => VExprUniOp VUniNot
+      | unop.Not => VExprUniOp VUniNeg
+      | unop.Opp => VExprUniOp VUniMinus
+      | @unop.UnsignedResize n m => VExprCast (VExprPriLiteral (VDecimalNumberNB m))
+      | @unop.SignedResize n m => fun e =>
+        let e := VExprSystemTfCall VSystemTfSigned [e] in
+        let e := VExprCast (VExprPriLiteral (VDecimalNumberNB m)) e in
+        let e := VExprSystemTfCall VSystemTfUnsigned [e] in e
       end.
 
     Definition binop {a b c} (o : binop a b c) : VBinOp :=
@@ -556,12 +571,12 @@ Module verilog.
       | _ => ltac:(admit)
       end.
 
-    Fixpoint expr {t} (e : expr var t) : @VExpr VId :=
+    Fixpoint expr {t} (e : expr var t) : VExpr :=
       match e with
       | Var x => VExprId x
       | Const c => const c
       | Cond c t f => VExprCond (@expr _ c) (@expr _ t) (@expr _ f)
-      | Unop o e => VExprUniOp (unop o) (@expr _ e)
+      | Unop o e => unop o (@expr _ e)
       | Binop o a b => VExprBinOp (binop o) (@expr _ a) (@expr _ b)
       | @Get _ c _ e TODO_i => lvalue c (expr e)
       end.
