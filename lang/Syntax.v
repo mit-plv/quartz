@@ -75,6 +75,12 @@ Module type.
     all : subst; trivial; abstract congruence.
   Defined.
 
+  Lemma eq_dec_refl t : eq_dec t t = left eq_refl.
+  Proof.
+    destruct eq_dec; [|contradiction].
+    apply f_equal, Eqdep_dec.UIP_dec, type.eq_dec.
+  Qed.
+
   Ltac2 Type exn ::= [ ReifyUnknown (constr) | InductiveNotAPrimitiveRecord (constr) ].
   Ltac2 rec reify t :=
     lazy_match! t with
@@ -103,6 +109,7 @@ Module type.
   end end.
 
   Notation reify'' state := (ltac2:(let r := type.reify (pretype state) in exact $r)) (only parsing).
+  Definition tt : Unit := Zmod.zero.
 End type.
 Import type.
 
@@ -140,7 +147,7 @@ Module struct.
               Z.eq_dec Z_rec Z_rect sumbool_rec sumbool_rect
               Pos.eq_dec positive_rec positive_rect eq_ind_r eq_ind eq_sym ]. trivial. Qed.
 
-  Ltac2 lower v :=
+  Ltac2 rep v :=
     match UConstr.kind (Constr.type v) with
     | UConstr.Ind ind inst =>
       let arrproj := Option.get (Ind.get_projections (Ind.data ind)) in
@@ -149,7 +156,7 @@ Module struct.
         let e := UConstr.make (UConstr.Constant c inst) in
         let e := constr:($e $v) in
         constr:(pair $e $acc)
-        ) arrproj 'tt
+        ) arrproj 'Datatypes.tt
     | _ => Control.throw (type.ReifyUnknown (Constr.type v))
     end.
 End struct.
@@ -624,9 +631,40 @@ Module fifo1. (* Example module *)
     return this! at data).
 
   (* For specifications, compute the representation of native-record [state] *)
-  Definition rep (v : state) : type.reify'' state :=
-    ltac2:(let t := struct.lower &v in eexact $t).
+  Coercion rep (v : state) : type.reify'' state :=
+    ltac2:(let t := struct.rep &v in exact $t).
   End WithElementType.
+
+
+  (* Example proofs for a concrete module *)
+
+  Lemma peek_Bits32_ok (s : state(t:=Bits 32)) : expr.interp (peek (rep s)) = s.(data).
+  Proof. trivial. Qed.
+
+  Lemma enq_Bits32_ok (s : state) (x : Bits 32) :
+    action.interp (enq x) s = (rep {| len := true; data := x |}, tt ).
+  Proof. trivial. Qed.
+
+  Lemma deq_Bits32_ok (s : state(t:=Bits 32)) :
+    action.interp deq s = (rep {| len := false; data := s.(data) |}, s.(data)).
+  Proof. trivial. Qed.
+
+
+  (* Example proofs for a module template *)
+
+  Lemma peek_ok {t} (s : state(t:=t)) : expr.interp (peek (rep s)) = s.(data).
+  Proof. repeat (cbn -[type.eq_dec]; rewrite ?eq_dec_refl); trivial. Qed.
+
+  Lemma enq_ok {t} (s : state(t:=t)) x :
+    action.interp (enq x) s = (rep {| len := true; data := x |}, tt ).
+  Proof. repeat (cbn -[type.eq_dec]; rewrite ?eq_dec_refl); trivial. Qed.
+
+  Lemma deq_ok {t} (s : state(t:=t)) :
+    action.interp deq s = (rep {| len := false; data := s.(data) |}, s.(data) ).
+  Proof. repeat (cbn -[type.eq_dec]; rewrite ?eq_dec_refl); trivial. Qed.
+
+  (* The [rewrite ?eq_dec_refl] is needed because structs are deeply embedded.
+   * If they were instead desugared into pairs we wouldn't need the rewrite. *)
 End fifo1.
 
 Require Import DecimalString.
