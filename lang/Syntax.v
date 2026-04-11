@@ -34,31 +34,29 @@ Module type.
 
   Coercion type.interp: type >-> Sortclass.
 
-  Section WithInhabited.
-  Context (inhabited : forall t : type, t).
-  Fixpoint inhabited_struct (s : struct) : s :=
+  Section WithDefault.
+  Context (default : forall t : type, t).
+  Fixpoint default_struct (s : struct) : s :=
     match s with
     | nil => tt
-    | cons (_, t) s => (inhabited t, inhabited_struct s)
+    | cons (_, t) s => (default t, default_struct s)
     end.
   Context (t : type).
-  Fixpoint inhabited_array (n : nat) :=
+  Fixpoint default_array (n : nat) :=
     match n return Vector.t t n with
     | O => Vector.nil _
-    | S n => Vector.cons (type.interp t) (inhabited t) n (inhabited_array n)
+    | S n => Vector.cons (type.interp t) (default t) n (default_array n)
     end.
-  End WithInhabited.
-  Fixpoint inhabited (t : type) : t. refine
+  End WithDefault.
+  Fixpoint default (t : type) : t :=
     match t return t with
     | Bool => false
     | Bits sz => Zmod.zero
-    | Pair a b => (inhabited a, inhabited b)
-    | Struct s => inhabited_struct inhabited s
-    | Array t n => inhabited_array inhabited t n
+    | Pair a b => (default a, default b)
+    | Struct s => default_struct default s
+    | Array t n => default_array default t n
     end.
-  Qed.
-
-  Global Opaque inhabited inhabited_array inhabited_struct.
+  Lemma inhabited (t : type) : t. Proof. apply default. Qed.
 
   Fixpoint eq_dec (a b : type) : { a = b } + { a <> b }. refine
     match a, b with
@@ -157,6 +155,21 @@ Module struct.
     end.
 End struct.
 
+Module Vector.
+  Section WithT.
+  Context {T : Type}.
+  Fixpoint upd {n} (xs : Vector.t T n) (i : nat) (f : T -> T) : Vector.t T n :=
+    match xs in Vector.t _ n return Vector.t T n with
+    | Vector.nil _ => Vector.nil _
+    | Vector.cons _ x _ xs =>
+      match i with
+      | O => Vector.cons _ (f x) _ xs
+      | S i => Vector.cons _ x _ (upd xs  i f)
+      end
+    end.
+  End WithT.
+End Vector.
+
 Module unop.
   Inductive unop : type -> type -> Type :=
   | Not {n} : unop (Bits n) (Bits n)
@@ -207,7 +220,7 @@ Module typeWithHole.
   | PairL (t1 : typeWithHole) (t2: type)
   | PairR (t1 : type) (t2: typeWithHole)
   | Struct (l : struct) (n : string) (t : typeWithHole) (r : struct)
-  | Array (sz: nat) (t: typeWithHole).
+  | Array (sz: nat) (t: typeWithHole) (index_bits : Z).
 
   Fixpoint plug (C : typeWithHole) (t : type) : type :=
     match C with
@@ -215,38 +228,37 @@ Module typeWithHole.
     | PairL t1 t2 => type.Pair (plug t1 t) t2
     | PairR t1 t2 => type.Pair t1 (plug t2 t)
     | Struct l n C r => type.Struct (l ++ cons (n, plug C t) r)
-    | Array sz t' => type.Array (plug t' t) sz
+    | Array sz t' _ => type.Array (plug t' t) sz
     end.
 
   Fixpoint indices (t : typeWithHole) : type :=
     match t with
     | HOLE => Unit
     | PairL t _ | PairR _ t | Struct _ _ t _ => indices t
-    | Array sz t => Pair (Bits (Z.log2_up (Z.of_nat sz))) (indices t)
+    | Array sz t n => Pair (Bits n) (indices t)
     end.
 
-  Axiom Vector__get : forall {T n}, Vector.t T n -> bits (Z.log2_up (Z.of_nat n)) -> T.
-  Axiom Vector__mod : forall {T n}, Vector.t T n -> bits (Z.log2_up (Z.of_nat n)) -> (T -> T) -> Vector.t T n.
-
-  Fixpoint getField C : forall t, plug C t -> indices C -> t :=
-    match C with
+  Fixpoint get C : forall t, plug C t -> indices C -> t :=
+    match C return forall t, plug C t -> indices C -> t with
     | HOLE => fun t r i => r
-    | PairL a b => fun _ r i => getField a _ (fst r) i
-    | PairR a b => fun _ r i => getField b _ (snd r) i
-    | Struct _ n t _ => fun _ r i => getField t _ (struct.get n _ r) i
-    | Array sz t => fun _ r i => getField t _ (Vector__get r (fst i)) (snd i)
+    | PairL a b => fun _ r i => get a _ (fst r) i
+    | PairR a b => fun _ r i => get b _ (snd r) i
+    | Struct _ n t _ => fun _ r i => get t _ (struct.get n _ r) i
+    | Array sz t _ => fun _ r i => get t _
+        (List.nth_default (default _) (Vector.to_list r) (Z.to_nat (fst i))) (snd i)
     end.
-  Arguments getField {_ _}.
+  Arguments get {_ _}.
 
-  Fixpoint updField C : forall t, plug C t -> indices C -> (t -> t) -> plug C t :=
+  Fixpoint upd C : forall t, plug C t -> indices C -> (t -> t) -> plug C t :=
     match C with
     | HOLE => fun t r i f => f r
-    | PairL a b => fun _ r i v => (updField a _ (fst r) i v, snd r)
-    | PairR a b => fun _ r i v => (fst r, updField b _ (snd r) i v)
+    | PairL a b => fun _ r i v => (upd a _ (fst r) i v, snd r)
+    | PairR a b => fun _ r i v => (fst r, upd b _ (snd r) i v)
     | Struct _ n t _ => fun _ r i v => struct.upd n _ r v
-    | Array sz t => fun _ r i v => Vector__mod r (fst i) (fun r => updField _ _ r (snd i) v)
+    | Array sz t _ => fun _ r i v =>
+        Vector.upd r (Z.to_nat (fst i)) (fun r => upd _ _ r (snd i) v)
     end.
-  Arguments updField {_ _}.
+  Arguments upd {_ _}.
 
   Ltac2 reify_field p0c :=
     match UConstr.kind p0c with
@@ -306,8 +318,8 @@ Module expr.
     | Binop op e1 e2 => binop.interp op (interp e1) (interp e2)
     | Cond e a b => if interp e then interp a else interp b
     | Let _ ex eC => let x := interp ex in interp (eC x)
-    | Get r i => typeWithHole.getField (interp r) (interp i)
-    | Upd r i fv => typeWithHole.updField (interp r) (interp i) (fun v => interp (fv v))
+    | Get r i => typeWithHole.get (interp r) (interp i)
+    | Upd r i fv => typeWithHole.upd (interp r) (interp i) (fun v => interp (fv v))
     end.
 
   Declare Custom Entry quartz_expr.
@@ -363,9 +375,9 @@ Module action.
       | Cond e a b => fun s => if expr.interp (e s) then interp a s else interp b s
       | Upd i fv => fun s =>
           let i := expr.interp (i s) in
-          let ms := typeWithHole.getField s i in
+          let ms := typeWithHole.get s i in
           let (ms, v) := interp (fv s) ms in
-          (typeWithHole.updField s i (fun _ => ms), v)
+          (typeWithHole.upd s i (fun _ => ms), v)
       end.
   End WithState.
 
@@ -613,19 +625,19 @@ Import VerilogSyntax expr action fifo1.
 Local Notation "verilog_stmt:( t ')'" := t (t custom verilog_stmt).
 Local Notation "$ x" := (x) (x constr at level 0, in custom verilog_expr at level 1).
 Local Notation V := VExprId.
-Compute let INPUT:="INPUT" in let s:="s" in
+Compute let INPUT:="INPUT" in
   verilog.stmts id gensym (flatten.action (quartz_action:(
     enq INPUT;
     let x <- deq in
     return
       let v := peek this! in (* value method call *)
       #v == #x
-  )) s) (nil, 0) "STATE" "OUTPUT".
+  )) "STATE") (nil, 0) "STATE" "OUTPUT".
 
 (* ...which in slightly less verbose concrete syntax gives:
 tr -dc "[:alnum:]_ \n=$'."|sed s/verilog_stmt//g|sed s/VExprId//g|sed -e 's/\s\s*/ /g'|sed 's/\$ //g'|sed 's/V //g'
-$aupd = s.len
-$0 = s
+$aupd = STATE.len
+$0 = STATE
 $0.len = 1'b1
 $Seq = 0'd0
 $aupd$1 = $0.data
@@ -638,7 +650,7 @@ $5.len = 1'b0
 $Seq$6 = 0'd0
 $bind = $5.data
 $let = $5.data
-FINAL_STATE = $5
+STATE = $5
 OUTPUT = $let == $bind
  *)
 
