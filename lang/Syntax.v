@@ -33,7 +33,7 @@ Module type.
 
   Coercion type.interp: type >-> Sortclass.
 
-  Section WithDefault.
+  Section WithDefault. (* default values for out-of-bounds array access *)
   Context (default : forall t : type, t).
   Fixpoint default_struct (s : struct) : s :=
     match s with
@@ -55,31 +55,6 @@ Module type.
     | Struct s => default_struct default s
     | Array t n => default_array default t n
     end.
-  Lemma inhabited (t : type) : t. Proof. apply default. Qed.
-
-  Fixpoint eq_dec (a b : type) : { a = b } + { a <> b }. refine
-    match a, b with
-    | Bool, Bool => left eq_refl
-    | Bits a, Bits b =>
-        match Z.eq_dec a b with left _ => left _ | right _ => right _ end
-    | Struct a, Struct b =>
-        match list_eq_dec (fun '(sa, a) '(sb, b) =>
-          match string_dec sa sb, eq_dec a b with left _, left _ => left _ | _, _ => right _ end
-        ) a b with | left _ => left _ | right _ => right _ end
-    | Pair a1 a2, Pair b1 b2 =>
-        match eq_dec a1 b1, eq_dec a2 b2 with | left _, left _ => left _ | _, _ => right _ end
-    | Array a n, Array b m =>
-        match eq_dec a b, PeanoNat.Nat.eq_dec n m with | left _, left _ => left _ | _, _ => right _ end
-    | _, _ => right _
-    end.
-    all : subst; trivial; abstract congruence.
-  Defined.
-
-  Lemma eq_dec_refl t : eq_dec t t = left eq_refl.
-  Proof.
-    destruct eq_dec; [|contradiction].
-    apply f_equal, Eqdep_dec.UIP_dec, type.eq_dec.
-  Qed.
 
   Ltac2 Type exn ::= [ ReifyUnknown (constr) | InductiveNotAPrimitiveRecord (constr) ].
   Ltac2 rec reify t :=
@@ -116,36 +91,48 @@ Import type.
 Module struct.
   Notation struct := type.struct (only parsing).
 
-  Definition has (s : struct) (n : string) (t : type) : bool :=
-    existsb (fun nt => String.eqb (fst nt) n && type_beq (snd nt) t)%bool s.
-  Definition Has s n t := Bool.Is_true (has s n t).
+  Fixpoint fieldType (s : struct) (n : string) : type :=
+    match s with
+    | nil => Unit
+    | cons nt s =>
+      if String.eqb (fst nt) n
+      then snd nt
+      else fieldType s n
+    end.
 
-  Fixpoint get {s : struct} (n : string) (t : type) : s -> t :=
-    match s with | nil => fun _ => inhabited t | cons (nf, tf) s' =>
-    match String.eqb nf n with | false => fun s => @get _ n t (snd s) | true =>
-    match type.eq_dec tf t with | right _ => fun s => @get _ n t (snd s) | left pf =>
-    fun s => eq_rect tf type.interp (fst s) _ pf
-    end end end.
+  Fixpoint get {s : struct} n : s -> fieldType s n :=
+    match s with
+    | nil => fun _ => tt
+    | cons nt s =>
+        let b := String.eqb (fst nt) n in
+        if b return Struct (nt::s) -> if b then snd nt else fieldType s n
+        then fst
+        else fun v => get n (snd v)
+    end.
 
-  Fixpoint upd {s : struct} (n : string) (t : type) : s -> (t -> t) -> s :=
-    match s with | nil => fun s _ => s | cons (nf, tf) s' =>
-    match String.eqb nf n with | false => fun s v => (fst s, @upd s' n t (snd s) v) | true =>
-    match type.eq_dec t tf with | right _ => fun s v => (fst s, @upd s' n t (snd s) v) | left pf =>
-    fun s v => (eq_rect t (fun t => type.interp t -> type.interp t) v _ pf (fst s) , snd s)
-    end end end.
+  Fixpoint upd {s : struct} n : s -> (fieldType s n -> fieldType s n) -> s :=
+    match s with
+    | nil => fun s _ => s
+    | cons nt s =>
+        let b := String.eqb (fst nt) n in
+        if b return
+          Struct (nt::s) ->
+          ((if b then snd nt else fieldType s n) -> if b then snd nt else fieldType s n)
+          -> Struct (nt::s)
+        then fun v f => (f (fst v), snd v)
+        else fun v f => (fst v, @upd _ n (snd v) f)
+    end.
 
-  Definition put {s : struct} (n : string) (t : type) (sv : s) (v : t) :=
-    @upd s n t sv (fun _ => v).
+  Definition put {s : struct} (n : string) (t : type) (sv : s) (v : fieldType s n) :=
+    @upd s n sv (fun _ => v).
 
   Local Open Scope string_scope.
-  Example get_ab_b : @get [("a", Bits 7); ("b", Bool)] "b" Bool = fun r => fst (snd r).
-  Proof. cbv [get eq_dec eq_rect String.eqb Ascii.eqb Bool.eqb]. trivial. Qed.
-  Example get_ab_c : @get [("a", Bits 7); ("b", Bool)] "c" Bool = fun r => inhabited Bool.
-  Proof. cbv [get eq_dec eq_rect String.eqb Ascii.eqb Bool.eqb]. trivial. Qed.
-  Example get_ab_a : @get [("a", Bits 7); ("b", Bool)] "a" (Bits 7) = fun r => fst r.
-  Proof. cbv [get eq_dec eq_rect String.eqb Ascii.eqb Bool.eqb
-              Z.eq_dec Z_rec Z_rect sumbool_rec sumbool_rect
-              Pos.eq_dec positive_rec positive_rect eq_ind_r eq_ind eq_sym ]. trivial. Qed.
+  Example get_ab_a : @get [("a", Bits 7); ("b", Bool)] "a" = fun r => fst r.
+  Proof. cbv [get fst snd String.eqb Ascii.eqb Bool.eqb Struct_ interp fold_right]. trivial. Qed.
+  Example get_ab_b : @get [("a", Bits 7); ("b", Bool)] "b" = fun r => fst (snd r).
+  Proof. cbv [get fst snd String.eqb Ascii.eqb Bool.eqb Struct_ interp fold_right]. trivial. Qed.
+  Example get_ab_c : @get [("a", Bits 7); ("b", Bool)] "c" = fun r => tt.
+  Proof. cbv [get fst snd String.eqb Ascii.eqb Bool.eqb Struct_ interp fold_right]. trivial. Qed.
 
   Ltac2 rep v :=
     match UConstr.kind (Constr.type v) with
@@ -234,7 +221,8 @@ Module typeWithHole.
   | PairL (t1 : typeWithHole) (t2: type)
   | PairR (t1 : type) (t2: typeWithHole)
   | Struct (l : struct) (n : string) (t : typeWithHole) (r : struct)
-  | Array (sz: nat) (t: typeWithHole) (index_bits : Z).
+     {NoDup_by_fun_eq_refl : forall t, struct.fieldType (l ++ (n, t) :: r) n = t}
+  | Array (sz : nat) (t : typeWithHole) (index_width : Z).
 
   Fixpoint plug (C : typeWithHole) (t : type) : type :=
     match C with
@@ -257,20 +245,21 @@ Module typeWithHole.
     | HOLE => fun t r i => r
     | PairL a b => fun _ r i => get a _ (fst r) i
     | PairR a b => fun _ r i => get b _ (snd r) i
-    | Struct _ n t _ => fun _ r i => get t _ (struct.get n _ r) i
+    | @Struct _ n t _ pf => fun _ r i => get t _ (eq_rect _ _ (struct.get n r) _ (pf _)) i
     | Array sz t _ => fun _ r i => get t _
         (List.nth_default (default _) (Vector.to_list r) (Z.to_nat (Zmod.unsigned (fst i)))) (snd i)
     end.
   Arguments get {_ _}.
 
   Fixpoint upd C : forall t, plug C t -> indices C -> (t -> t) -> plug C t :=
-    match C with
+    match C return forall t, plug C t -> indices C -> (t -> t) -> plug C t with
     | HOLE => fun t r i f => f r
-    | PairL a b => fun _ r i v => (upd a _ (fst r) i v, snd r)
-    | PairR a b => fun _ r i v => (fst r, upd b _ (snd r) i v)
-    | Struct _ n t _ => fun _ r i v => struct.upd n _ r v
-    | Array sz t _ => fun _ r i v =>
-        Vector.upd r (Z.to_nat (Zmod.unsigned (fst i))) (fun r => upd _ _ r (snd i) v)
+    | PairL a b => fun _ r i f => (upd a _ (fst r) i f, snd r)
+    | PairR a b => fun _ r i f => (fst r, upd b _ (snd r) i f)
+    | @Struct _ n t _ pf => fun _ r i f =>
+        struct.upd n r (eq_rect (plug t _) (fun u => u -> u) (fun v => upd t _ v i f) _ (eq_sym (pf _)))
+    | Array sz t _ => fun _ r i f =>
+        Vector.upd r (Z.to_nat (Zmod.unsigned (fst i))) (fun r => upd _ _ r (snd i) f)
     end.
   Arguments upd {_ _}.
 
@@ -289,7 +278,7 @@ Module typeWithHole.
           let l := firstn (Proj.index p0) rs in
           let (n, t) := lazy_match! hd (skipn (Proj.index p0) rs) with (?n, ?t) => (n, t) end in
           let r := skipn (Int.add 1 (Proj.index p0)) rs in
-          (constr:(Struct $l $n HOLE $r), t)
+          (constr:(@Struct $l $n HOLE $r (fun _ => eq_refl)), t)
         | _ => Control.throw (type.ReifyUnknown p0c)
         end
       | _ => Control.throw (type.ReifyUnknown p0c)
@@ -633,40 +622,26 @@ Module fifo1. (* Example module *)
   (* For specifications, compute the representation of native-record [state] *)
   Coercion rep (v : state) : type.reify'' state :=
     ltac2:(let t := struct.rep &v in exact $t).
-  End WithElementType.
 
+  Import Datatypes type.
 
-  (* Example proofs for a concrete module *)
+  (* Example specifications and proofs. Code can be symbolically evaluated by
+   * reduction even if [t] is abstract. See [typeWithHole.Struct] and [get]. *)
 
-  Lemma peek_Bits32_ok (s : state(t:=Bits 32)) : expr.interp (peek (rep s)) = s.(data).
+  Lemma peek_ok (s : state) : expr.interp (peek (rep s)) = s.(data).
   Proof. trivial. Qed.
 
-  Lemma enq_Bits32_ok (s : state) (x : Bits 32) :
+  Lemma enq_ok (s : state) x :
     action.interp (enq x) s = (rep {| len := true; data := x |}, tt ).
   Proof. trivial. Qed.
 
-  Lemma deq_Bits32_ok (s : state(t:=Bits 32)) :
-    action.interp deq s = (rep {| len := false; data := s.(data) |}, s.(data)).
-  Proof. trivial. Qed.
-
-
-  (* Example proofs for a module template *)
-
-  Lemma peek_ok {t} (s : state(t:=t)) : expr.interp (peek (rep s)) = s.(data).
-  Proof. repeat (cbn -[type.eq_dec]; rewrite ?eq_dec_refl); trivial. Qed.
-
-  Lemma enq_ok {t} (s : state(t:=t)) x :
-    action.interp (enq x) s = (rep {| len := true; data := x |}, tt ).
-  Proof. repeat (cbn -[type.eq_dec]; rewrite ?eq_dec_refl); trivial. Qed.
-
-  Lemma deq_ok {t} (s : state(t:=t)) :
+  Lemma deq_ok (s : state) :
     action.interp deq s = (rep {| len := false; data := s.(data) |}, s.(data) ).
-  Proof. repeat (cbn -[type.eq_dec]; rewrite ?eq_dec_refl); trivial. Qed.
-
-  (* The [rewrite ?eq_dec_refl] is needed because structs are deeply embedded.
-   * If they were instead desugared into pairs we wouldn't need the rewrite. *)
+  Proof. trivial. Qed.
+  End WithElementType.
 End fifo1.
 
+Module Private_CompilationExample.
 Require Import DecimalString.
 Definition gensym_st : Type := list string * Z.
 Definition gensym (st : gensym_st) (s : string) : string * gensym_st :=
@@ -686,6 +661,7 @@ Compute let INPUT:="INPUT" in
       let v := peek this! in (* value method call *)
       #v == #x
   )) "STATE") (nil, 0) "STATE" "OUTPUT".
+End Private_CompilationExample.
 
 (* ...which in slightly less verbose concrete syntax gives:
 tr -dc "[:alnum:]_ \n=$'."|sed s/verilog_stmt//g|sed s/VExprId//g|sed -e 's/\s\s*/ /g'|sed 's/\$ //g'|sed 's/V //g'
@@ -721,3 +697,30 @@ OUTPUT = $let == $bind
    - Prove compiler correctness
 *)
 
+
+Module Export more. Module type.
+  Import type.
+  Fixpoint eq_dec (a b : type) : { a = b } + { a <> b }. refine
+    match a, b with
+    | Bool, Bool => left eq_refl
+    | Bits a, Bits b =>
+        match Z.eq_dec a b with left _ => left _ | right _ => right _ end
+    | Struct a, Struct b =>
+        match list_eq_dec (fun '(sa, a) '(sb, b) =>
+          match string_dec sa sb, eq_dec a b with left _, left _ => left _ | _, _ => right _ end
+        ) a b with | left _ => left _ | right _ => right _ end
+    | Pair a1 a2, Pair b1 b2 =>
+        match eq_dec a1 b1, eq_dec a2 b2 with | left _, left _ => left _ | _, _ => right _ end
+    | Array a n, Array b m =>
+        match eq_dec a b, PeanoNat.Nat.eq_dec n m with | left _, left _ => left _ | _, _ => right _ end
+    | _, _ => right _
+    end.
+    all : subst; trivial; abstract congruence.
+  Defined.
+
+  Lemma eq_dec_refl t : eq_dec t t = left eq_refl.
+  Proof.
+    destruct eq_dec; [|contradiction].
+    apply f_equal, Eqdep_dec.UIP_dec, type.eq_dec.
+  Qed.
+End type. End more.
