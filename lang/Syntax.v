@@ -105,7 +105,7 @@ Module struct.
     | nil => fun _ => tt
     | cons nt s =>
         let b := String.eqb (fst nt) n in
-        if b return Struct (nt::s) -> if b then snd nt else fieldType s n
+        if b return Struct (nt::s) -> type.interp (if b then _ else _)
         then fst
         else fun v => get n (snd v)
     end.
@@ -115,10 +115,8 @@ Module struct.
     | nil => fun s _ => s
     | cons nt s =>
         let b := String.eqb (fst nt) n in
-        if b return
-          Struct (nt::s) ->
-          ((if b then snd nt else fieldType s n) -> if b then snd nt else fieldType s n)
-          -> Struct (nt::s)
+        if b return let t := type.interp (if b then _ else _) in
+                    Struct (nt::s) -> (t -> t) -> Struct (nt::s)
         then fun v f => (f (fst v), snd v)
         else fun v f => (fst v, @upd _ n (snd v) f)
     end.
@@ -530,6 +528,10 @@ Module verilog.
     Context {gensym_state : Type} (gensym : gensym_state -> string -> VId * gensym_state).
     Let var (_ : type) := VId.
 
+    Definition VPairNew : VExpr -> VExpr -> VExpr. Admitted.
+    Definition VPairFst : VExpr -> VExpr. Admitted.
+    Definition VPairSnd : VExpr -> VExpr. Admitted.
+
     Fixpoint const {t : type} : t -> VExpr :=
       match t return t -> VExpr with
       | Bool => fun v => VExprPriLiteral (VIntegralBinary (Some 1) (Z.b2z v))
@@ -541,13 +543,18 @@ Module verilog.
       | _ => fun _ => ltac:(admit)
       end.
 
-    Fixpoint lvalue (c : typeWithHole) (e : VExpr) : VExpr :=
-      match c with
-      | typeWithHole.HOLE => e
+    Fixpoint lvalue (c : typeWithHole) (e : VExpr) : expr var c -> VExpr :=
+      match c return expr var c -> VExpr with
+      | typeWithHole.HOLE => fun _ => e
       | typeWithHole.Struct _ n c _ =>
         lvalue c (VExprHier e (VExprId (field_name n)))
-      | _ => ltac:(admit)
+      | typeWithHole.PairL c _ | typeWithHole.PairR _ c => lvalue c e
+      | typeWithHole.Array _ c _ => (* fun i => lvalue (VExprPriSelect  e _) (snd i) *) ltac:(admit)
       end.
+
+    Definition signed (e : VExpr) : VExpr := VExprSystemTfCall VSystemTfSigned [e].
+
+    Definition unsigned (e : VExpr) : VExpr := VExprSystemTfCall VSystemTfUnsigned [e].
 
     Definition unop {a b} (o : unop a b) : VExpr -> VExpr :=
       match o with
@@ -556,15 +563,30 @@ Module verilog.
       | unop.Opp => VExprUniOp VUniMinus
       | @unop.UnsignedResize n m => VExprCast (VExprPriLiteral (VDecimalNumberNB m))
       | @unop.SignedResize n m => fun e =>
-        let e := VExprSystemTfCall VSystemTfSigned [e] in
-        let e := VExprCast (VExprPriLiteral (VDecimalNumberNB m)) e in
-        let e := VExprSystemTfCall VSystemTfUnsigned [e] in e
+        unsigned (VExprCast (VExprPriLiteral (VDecimalNumberNB m)) (signed e))
       end.
 
-    Definition binop {a b c} (o : binop a b c) : VBinOp :=
+    Definition compare (c : binop.compare) :=
+      match c with
+      | binop.cLt => VBinLt
+      | binop.cGt => VBinGt
+      | binop.cLe => VBinLe
+      | binop.cGe => VBinGe
+      end.
+
+    Definition binop {a b c} (o : binop a b c) : VExpr -> VExpr -> VExpr :=
       match o with
-      | binop.EqBits => VBinEq
-      | _ => ltac:(admit)
+      | binop.Add => VExprBinOp VBinAdd
+      | binop.And => VExprBinOp VBinLAnd
+      | binop.Or => VExprBinOp VBinLOr
+      | binop.Slu => VExprBinOp VBinShl
+      | binop.Sru => VExprBinOp VBinShr
+      | binop.Srs => fun a b => VExprBinOp VBinSar (signed a) b
+      | binop.EqBits => VExprBinOp VBinEq
+      | binop.Compare s c => fun a b => VExprBinOp (compare c)
+          (if s then signed a else unsigned a)
+          (if s then signed b else unsigned b)
+      | binop.MkPair => VPairNew
       end.
 
     Fixpoint expr {t} (e : expr var t) : VExpr :=
@@ -573,8 +595,8 @@ Module verilog.
       | Const c => const c
       | Cond c t f => VExprCond (@expr _ c) (@expr _ t) (@expr _ f)
       | Unop o e => unop o (@expr _ e)
-      | Binop o a b => VExprBinOp (binop o) (@expr _ a) (@expr _ b)
-      | @Get _ c _ e TODO_i => lvalue c (expr e)
+      | Binop o a b => binop o (@expr _ a) (@expr _ b)
+      | @Get _ c _ e i => lvalue c (expr e) i
       end.
 
     Fixpoint stmts {a b} (s : flat var (flat.expr var a * flat.expr var b)) (g : gensym_state) (fs ft : VId) : list (@VStatementItem VId) :=
@@ -583,10 +605,10 @@ Module verilog.
           let '(x, g) := gensym g x in
           VStatementItemBlockingAssignNormal (VExprId x) (expr ex) ::
           @stmts _ _ (eC x) g fs ft
-      | @Upd _ _ c _ e TODO_i v eC =>
+      | @Upd _ _ c _ e i v eC =>
           let '(x, g) := gensym g EmptyString in
           VStatementItemBlockingAssignNormal (VExprId x) (expr e) ::
-          VStatementItemBlockingAssignNormal (lvalue c (VExprId x)) (expr v) ::
+          VStatementItemBlockingAssignNormal (lvalue c (VExprId x) i) (expr v) ::
           @stmts _ _ (eC x) g fs ft
       | Ret (a, b) =>
           VStatementItemBlockingAssignNormal (VExprId fs) (expr a) ::
@@ -661,7 +683,6 @@ Compute let INPUT:="INPUT" in
       let v := peek this! in (* value method call *)
       #v == #x
   )) "STATE") (nil, 0) "STATE" "OUTPUT".
-End Private_CompilationExample.
 
 (* ...which in slightly less verbose concrete syntax gives:
 tr -dc "[:alnum:]_ \n=$'."|sed s/verilog_stmt//g|sed s/VExprId//g|sed -e 's/\s\s*/ /g'|sed 's/\$ //g'|sed 's/V //g'
@@ -696,7 +717,7 @@ OUTPUT = $let == $bind
    - Investigate whether it's worth trying to generate fewer intermediate assignments
    - Prove compiler correctness
 *)
-
+End Private_CompilationExample.
 
 Module Export more. Module type.
   Import type.
