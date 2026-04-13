@@ -14,6 +14,7 @@ Module type.
   | Bool
   | Bits (sz: Z)
   | Pair (_ _ : type)
+  | Either (_ _ : type)
   | Struct (_ : list (string * type))
   | Array (t: type) (sz: nat).
   Notation Unit := (Bits 0) (only parsing).
@@ -23,6 +24,7 @@ Module type.
     | Bool => bool
     | Bits sz => bits sz
     | Pair a b => interp a * interp b
+    | Either a b => interp a + interp b
     | Struct nts => fold_right (fun nt T => interp (snd nt) * T)%type unit nts
     | Array t n => Vector.t (interp t) n
     end.
@@ -52,6 +54,7 @@ Module type.
     | Bool => false
     | Bits sz => Zmod.zero
     | Pair a b => (default a, default b)
+    | Either a b => inl (default a) (* TODO: confirm this *)
     | Struct s => default_struct default s
     | Array t n => default_array default t n
     end.
@@ -66,6 +69,10 @@ Module type.
         let rt1 := reify t1 in
         let rt2 := reify t2 in
         constr:(type.Pair $rt1 $rt2)
+    | sum ?t1 ?t2 =>
+        let rt1 := reify t1 in
+        let rt2 := reify t2 in
+        constr:(type.Either $rt1 $rt2)
     | Vector.t ?t ?n =>
         let rt := reify t in
         constr:(type.Array $rt $n)
@@ -168,6 +175,8 @@ Module unop.
   | Opp {n} : unop (Bits n) (Bits n) (* arithmetic negation *)
   | UnsignedResize {n m} : unop (Bits n) (Bits m) (* zero-extend or truncate *)
   | SignedResize {n m} : unop (Bits n) (Bits m) (* sign-extend or truncate *)
+  | Left {l r} : unop l (Either l r)
+  | Right {l r} : unop r (Either l r)
   .
 
   Definition interp {a b} (op: unop a b) : type.interp a -> type.interp b :=
@@ -177,6 +186,8 @@ Module unop.
     | Opp => Zmod.opp
     | UnsignedResize => fun v => bits.of_Z _ (Zmod.unsigned v)
     | SignedResize => fun v => bits.of_Z _ (Zmod.signed v)
+    | Left => inl
+    | Right => inr
     end.
 End unop.
 Notation unop := unop.unop (only parsing).
@@ -299,6 +310,7 @@ Module expr.
     | Unop {t1 tR: type} (op: unop t1 tR) (e1: expr t1) : expr tR
     | Binop {t1 t2 tR: type} (op: binop t1 t2 tR) (e1: expr t1) (e2: expr t2) : expr tR
     | Cond {t} (_ : expr Bool) (a b : expr t) : expr t
+    | MatchEither {tl tr t} (_ : expr (Either tl tr)) (l : var tl -> expr t) (r : var tr -> expr t) : expr t
     | Let (name_hint: string) {tx: type} (ex: expr tx) {tC: type} (eC: var tx -> expr tC) : expr tC
     | Get {C : typeWithHole} {t} (r : expr (C t)) (i : expr C) : expr t
     | Upd {C : typeWithHole} {t} (r : expr (C t)) (i : expr C)
@@ -318,6 +330,7 @@ Module expr.
     | Unop op e1 => unop.interp op (interp e1)
     | Binop op e1 e2 => binop.interp op (interp e1) (interp e2)
     | Cond e a b => if interp e then interp a else interp b
+    | MatchEither e a b => match interp e with inl v => interp (a v) | inr v => interp (b v) end
     | Let _ ex eC => let x := interp ex in interp (eC x)
     | Get r i => typeWithHole.get (interp r) (interp i)
     | Upd r i fv => typeWithHole.upd (interp r) (interp i) (fun v => interp (fv v))
@@ -416,6 +429,7 @@ Module flat.
   Inductive flat {T : Type} :=
   | Let (name_hint: string) {tx: type} (ex: expr tx) (eC: var tx -> flat)
   | Upd {C : typeWithHole} {t} (x: expr (C t)) (i : expr C) (v: expr t) (eC : var (C t) -> flat)
+  | MatchEither {l r t} (_ : expr (Either l r)) (a : var l -> expr t) (b : var r -> expr t) (eC : var t -> flat)
   | Ret (_ : T).
 
   Definition let_ {T} (name_hint: string) {tx: type} (ex: expr tx) : forall (eC: var tx -> flat), @flat T :=
@@ -434,6 +448,7 @@ Module flat.
     match a with
     | Let x e C => Let x e (fun v => bind (C v) b)
     | Upd e i v C => Upd e i v (fun v => bind (C v) b)
+    | MatchEither e l r C => MatchEither e l r (fun v => bind (C v) b)
     | Ret a => b a
     end.
   End WithSubstitutionType.
@@ -470,6 +485,7 @@ Module flatten.
       flat.let_ "$eupd" (flat.Get es ei) (fun ef =>
       flat.bind (expr (e3 ef)) (fun ef =>
       flat.Upd es ei ef (fun es => flat.Ret (flat.Var es))))))
+    | expr.MatchEither _ _ _ => _
     end.
 
     Fixpoint action {s t} (a : action var s t) : (var s -> flat var (flat.expr var s * flat.expr var t)) :=
