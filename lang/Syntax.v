@@ -4,7 +4,7 @@ From Stdlib Require Import String List.
 From Stdlib Require Vector.
 Import ListNotations.
 
-Require Import ident_to_string.
+From quartz.lang Require Import ident_to_string let_lift.
 
 Open Scope Z_scope.
 
@@ -28,6 +28,7 @@ Module type.
     | Struct nts => fold_right (fun nt T => interp (snd nt) * T)%type unit nts
     | Array t n => Vector.t (interp t) n
     end.
+  Definition interpfn a b := interp a -> interp b.
 
   Definition struct := list (string * type).
   Definition Struct_ : struct -> type := Struct.
@@ -132,11 +133,11 @@ Module struct.
     @upd s n sv (fun _ => v).
 
   Local Open Scope string_scope.
-  Example get_ab_a : @get [("a", Bits 7); ("b", Bool)] "a" = fun r => fst r.
+  Local Example get_ab_a : @get [("a", Bits 7); ("b", Bool)] "a" = fun r => fst r.
   Proof. cbv [get fst snd String.eqb Ascii.eqb Bool.eqb Struct_ interp fold_right]. trivial. Qed.
-  Example get_ab_b : @get [("a", Bits 7); ("b", Bool)] "b" = fun r => fst (snd r).
+  Local Example get_ab_b : @get [("a", Bits 7); ("b", Bool)] "b" = fun r => fst (snd r).
   Proof. cbv [get fst snd String.eqb Ascii.eqb Bool.eqb Struct_ interp fold_right]. trivial. Qed.
-  Example get_ab_c : @get [("a", Bits 7); ("b", Bool)] "c" = fun r => tt.
+  Local Example get_ab_c : @get [("a", Bits 7); ("b", Bool)] "c" = fun r => tt.
   Proof. cbv [get fst snd String.eqb Ascii.eqb Bool.eqb Struct_ interp fold_right]. trivial. Qed.
 
   Ltac2 rep v :=
@@ -302,19 +303,17 @@ Coercion typeWithHole.indices : typeWithHole >-> type.
 
 Module expr.
   Section WithSubstitutionType.
-    Context {var: type -> Type}.
+    Context {var : type -> Type}.
+    Context {fn : type -> type -> Type}.
 
-    Inductive expr : type -> Type :=
-    | Var {tx: type} (x: var tx) : expr tx
-    | Const {tc: type} (c: type.interp tc) : expr tc
-    | Unop {t1 tR: type} (op: unop t1 tR) (e1: expr t1) : expr tR
-    | Binop {t1 t2 tR: type} (op: binop t1 t2 tR) (e1: expr t1) (e2: expr t2) : expr tR
-    | Cond {t} (_ : expr Bool) (a b : expr t) : expr t
-    | MatchEither {tl tr t} (_ : expr (Either tl tr)) (l : var tl -> expr t) (r : var tr -> expr t) : expr t
-    | Let (name_hint: string) {tx: type} (ex: expr tx) {tC: type} (eC: var tx -> expr tC) : expr tC
-    | Get {C : typeWithHole} {t} (r : expr (C t)) (i : expr C) : expr t
-    | Upd {C : typeWithHole} {t} (r : expr (C t)) (i : expr C)
-       (v : var t -> expr t) : expr (typeWithHole.plug C t).
+    Inductive expr {t : type} : Type :=
+    | Const (c : type.interp t)
+    | Var (x : var t)
+    | Get (C : typeWithHole) (r : @expr (C t)) (i : @expr C)
+    | Unop {t1 : type} (op : unop t1 t) (e1 : @expr t1)
+    | Binop {t1 t2 : type} (op : binop t1 t2 t) (e1 : @expr t1) (e2 : @expr t2)
+    | If (_ : @expr Bool) (a b : @expr t)
+    | Call {a} (_ : fn a t) (_ : @expr a).
 
     Definition tt := @Const Unit Zmod.zero.
     Definition true := @Const Bool true.
@@ -323,17 +322,15 @@ Module expr.
   End WithSubstitutionType.
   Arguments expr : clear implicits.
 
-  Fixpoint interp {t} (e: expr type.interp t) : type.interp t :=
-    match e in expr _ t return type.interp t with
-    | Var x => x
+  Fixpoint interp {t} (e : expr type.interp type.interpfn t) : type.interp t :=
+    match e return type.interp t with
     | Const c => c
+    | Var x => x
+    | Get _ r i => typeWithHole.get (interp r) (interp i)
     | Unop op e1 => unop.interp op (interp e1)
     | Binop op e1 e2 => binop.interp op (interp e1) (interp e2)
-    | Cond e a b => if interp e then interp a else interp b
-    | MatchEither e a b => match interp e with inl v => interp (a v) | inr v => interp (b v) end
-    | Let _ ex eC => let x := interp ex in interp (eC x)
-    | Get r i => typeWithHole.get (interp r) (interp i)
-    | Upd r i fv => typeWithHole.upd (interp r) (interp i) (fun v => interp (fv v))
+    | If e a b => if interp e then interp a else interp b
+    | Call f e => f (interp e)
     end.
 
   Declare Custom Entry quartz_expr.
@@ -343,58 +340,50 @@ Module expr.
   Notation "x" := (x) (in custom quartz_expr, x global, only parsing).
   Notation "f x" := (f x) (in custom quartz_expr at level 10).
   Notation "x == y" := (Binop (binop.EqBits) x y) (in custom quartz_expr at level 70).
+  (*
   Notation "'let' x := e1 'in' e2"        := (Let "$let" e1 (fun x => e2))
     (in custom quartz_expr at level 200, x constr at level 0, e1 custom quartz_expr, e2 custom quartz_expr).
+   *)
 
+  (*
   Definition this (var : type -> Type) t := var t.
   Notation "this!" := (ltac:(match goal with x : @this _ _ |- ?g => exact (Var x) || exact x end))
     (in custom quartz_expr, only parsing).
   Notation "v 'at' f" := (ltac2:(let (c, t) := typeWithHole.reify_field (pretype f) in let v := pretype v in eexact (Get (C:=$c) (t:=$t) $v tt)))
     (in custom quartz_expr at level 10, f global, v custom quartz_expr, only parsing).
+   *)
 End expr.
 Notation expr := expr.expr.
 
-Module action.
+Module eexpr. (* extended expressions = purely functional "function" bodies *)
   Import expr.
   Section WithSubstitutionType.
-    Context {var: type -> Type}.
-    Local Notation this := (@expr.this var).
-    Local Notation expr := (@expr.expr var).
+    Context {var : type -> Type}.
+    Context {fn : type -> type -> Type}.
+    Local Notation expr := (@expr.expr var fn).
 
-    Inductive action : type -> type -> Type :=
-    | Ret {s t} (e : this s -> expr t) : action s t
-    | Put {s} (e : this s -> expr s) : action s Unit
-    | Bind {s} (name_hint : string) {tx} (a : action s tx) {t}
-      (aC : var tx -> action s t) : action s t
-    | Cond {s t} (_ : this s -> expr Bool) (a b : action s t) : action s t
-    | Upd {C : typeWithHole} {t r} (s := C t) (i : this s -> expr C) (fv : this s -> action t r) : action s r
-    .
-
-    Definition UpdPut {C : typeWithHole} {t} (i : expr C) (v : expr t) :=
-      Upd (C:=C) (t:=t) (fun _ => i) (fun _ => Put (fun _ => v)).
-
-    Definition Seq {s a b} (a : action s a) (b : action s b) :=
-      Bind "$Seq" a (fun _ => b).
+    Inductive eexpr : type -> Type :=
+    | Ret {t} (e : expr t) : eexpr t
+    | Let (name_hint : string) {tx} (a : expr tx) {t} (aC : var tx -> eexpr t) : eexpr t
+    | Bind (name_hint : string) {tx} (a : eexpr tx) {t} (aC : var tx -> eexpr t) : eexpr t
+    | If {t} (_ : expr Bool) (a b : eexpr t) : eexpr t
+    | MatchEither {l r} (_ : expr (Either l r)) {t} (l : var l -> eexpr t) (r : var r -> eexpr t) : eexpr t
+    | Upd {C : typeWithHole} (i : expr C) {t} (s := C t) (es : expr s) (v : expr t) : eexpr s.
   End WithSubstitutionType.
-  Arguments action : clear implicits.
+  Coercion Ret : expr >-> eexpr.
+  Arguments eexpr : clear implicits.
 
-  Section WithState.
-    Fixpoint interp {s t} (e: action type.interp s t) : s -> s * t :=
-      match e in action _ s t return s -> s * t with
-      | Ret e => fun s => (s, expr.interp (e s))
-      | Put e => fun s => let v := expr.interp (e s) in (v, Zmod.zero)
-      | Bind _ a aC => fun s =>
-          let '(s, v) := interp a s in
-          interp (aC v) s
-      | Cond e a b => fun s => if expr.interp (e s) then interp a s else interp b s
-      | Upd i fv => fun s =>
-          let i := expr.interp (i s) in
-          let ms := typeWithHole.get s i in
-          let (ms, v) := interp (fv s) ms in
-          (typeWithHole.upd s i (fun _ => ms), v)
-      end.
-  End WithState.
+  Fixpoint interp {t} (e: eexpr type.interp type.interpfn t) : t :=
+    match e in eexpr _ _ t return t with
+    | Ret e => expr.interp e
+    | Let _ a b => let x := expr.interp a in interp (b x)
+    | Bind _ a b => let x := interp a in interp (b x)
+    | If e a b => if expr.interp e then interp a else interp b
+    | MatchEither e l r => match expr.interp e with inl v => interp (l v) | inr v => interp (r v) end
+    | Upd i s v => typeWithHole.upd (expr.interp s) (expr.interp i) (fun _ => expr.interp v)
+    end.
 
+  (*
   Declare Custom Entry quartz_action.
   Notation "quartz_action:( a )" := a (a custom quartz_action, only parsing).
   Notation "$ v" := v (in custom quartz_action at level 0, v constr at level 0, format "'$' v").
@@ -410,354 +399,232 @@ Module action.
     (in custom quartz_action, only parsing).
   Notation "'return' e" := (Ret (fun _ => e))
     (in custom quartz_action at level 1, e custom quartz_expr).
-End action.
-Notation action := action.action (only parsing).
+   *)
+End eexpr.
+Notation eexpr := eexpr.eexpr (only parsing).
 
-Module flat.
+Module fn.
+  Import expr eexpr.
   Section WithSubstitutionType.
-  Context {var: type -> Type}.
-  (* cases of [expr.expr] without binders *)
-  Inductive expr : type -> Type :=
-  | Var {tx: type} (x: var tx) : expr tx
-  | Const {tc: type} (c: type.interp tc) : expr tc
-  | Unop {t1 tR: type} (op: unop t1 tR) (e1: expr t1) : expr tR
-  | Binop {t1 t2 tR: type} (op: binop t1 t2 tR) (e1: expr t1) (e2: expr t2) : expr tR
-  | Cond {t} (_ : expr Bool) (a b : expr t) : expr t
-  | Get {C : typeWithHole} {t} (r : expr (C t)) (i : expr C) : expr t.
-
-  (* cases of [expr.expr] with binders, returning T instead of expr t *)
-  Inductive flat {T : Type} :=
-  | Let (name_hint: string) {tx: type} (ex: expr tx) (eC: var tx -> flat)
-  | Upd {C : typeWithHole} {t} (x: expr (C t)) (i : expr C) (v: expr t) (eC : var (C t) -> flat)
-  | MatchEither {l r t} (_ : expr (Either l r)) (a : var l -> expr t) (b : var r -> expr t) (eC : var t -> flat)
-  | Ret (_ : T).
-
-  Definition let_ {T} (name_hint: string) {tx: type} (ex: expr tx) : forall (eC: var tx -> flat), @flat T :=
-    match ex with
-    | Var v => fun eC => eC v
-    | ex => fun eC => Let name_hint ex eC
-    end.
+    Context {var : type -> Type}.
+    Inductive fn {a b} := Fn { body : var a -> eexpr var (@fn) b }.
   End WithSubstitutionType.
+  Arguments Fn {_ _ _}.
+  #[global] Add Printing Constructor fn.
+  Arguments fn : clear implicits.
 
-  #[global] Arguments expr : clear implicits.
-  #[global] Arguments flat : clear implicits.
+  Section WithF.
+  Context {var : type -> Type} {fn1 fn2} (f : forall a b : type, fn1 a b -> fn2 a b).
+  Fixpoint expr_map_fn {t} (e : expr var fn1 t) : expr var fn2 t :=
+    match e with
+    | Const c => Const c
+    | Var x => Var x
+    | Get C r i => Get C (@expr_map_fn _ r) (@expr_map_fn _ i)
+    | Unop op e => Unop op (@expr_map_fn _ e)
+    | Binop op e1 e2 => Binop op (@expr_map_fn _ e1) (@expr_map_fn _ e2)
+    | expr.If e a b => expr.If (@expr_map_fn _ e) (@expr_map_fn _ a) (@expr_map_fn _ b)
+    | Call fn a => Call (f _ _ fn) (@expr_map_fn _ a)
+    end.
+  Fixpoint eexpr_map_fn {t} (e : eexpr var fn1 t) { struct e} : eexpr var fn2 t :=
+    match e with
+    | eexpr.Ret e => eexpr.Ret (expr_map_fn e)
+    | eexpr.Let x e C => eexpr.Let x (expr_map_fn e) (fun v => @eexpr_map_fn _ (C v))
+    | eexpr.Bind x e C => eexpr.Bind x (@eexpr_map_fn _ e) (fun v => @eexpr_map_fn _ (C v))
+    | If e a b => If (expr_map_fn e) (@eexpr_map_fn _ a) (@eexpr_map_fn _ b)
+    | MatchEither e a b => MatchEither (expr_map_fn e) (fun l => @eexpr_map_fn _ (a l)) (fun r => @eexpr_map_fn _ (b r))
+    | Upd i s v => Upd (@expr_map_fn _ i) (@expr_map_fn _ s) (@expr_map_fn _ v)
+    end.
+  End WithF.
 
+  Fixpoint interp {a b} (f : fn type.interp a b) {struct f} : type.interp a -> type.interp b :=
+     fun v => eexpr.interp (eexpr_map_fn (@interp) (f.(body) v)).
+
+  Ltac2 let_lift_fns e := let_lift_constants (fun c i => 
+    lazy_match! Constr.type (UConstr.make (UConstr.Constant c i)) with
+    | context[@fn.fn] => true
+    | _ => false
+    end) e.
+
+  Module Private_example_global_fn.
+    Definition succ {var} : fn var (Bits 8) (Bits 8) := Fn (fun x =>
+      Binop binop.Add (Var x) (Const (t:=Bits 8) (Zmod.of_Z _ 1))).
+
+    Definition pred {var} : fn var (Bits 8) (Bits 8) := Fn (fun y =>
+      eexpr.Let "_u" (Call succ (Unop (unop.UnsignedResize) (Var y))) (fun _u =>
+      Binop binop.Add (Var y) (Const (t:=Bits 8) (Zmod.of_Z _ (-1))))).
+
+    Definition cycle {var} := Fn (var:=var) (fun z =>
+      eexpr.Let "r" (Call pred (Call succ (Var z))) (fun r =>
+      Var r)).
+
+    Lemma interp_cycle : interp cycle = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
+    Proof. cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp]. trivial. Qed.
+
+    Lemma ok_cycle z : interp cycle z = z.
+    Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
+
+    Definition lifted_cycle {var} : fn var _ _ := ltac2:(let e := let_lift_fns 'cycle in exact $e).
+
+    Example let_lift_cycle : @lifted_cycle = @cycle.
+    Proof. cbv beta delta [lifted_cycle]. cbv beta delta [cycle pred succ]. trivial. Qed.
+  End Private_example_global_fn.
+
+  Module Private_example_global_polyfn.
+    Definition succ {var} : fn var (Bits 8) (Bits 8) := Fn (fun x =>
+      Binop binop.Add (Var x) (Const (t:=Bits 8) (Zmod.of_Z _ 1))).
+
+    Definition pred {var} {n} : fn var (Bits n) (Bits n) := Fn (fun y =>
+      eexpr.Let "_u" (Call succ (Unop (unop.UnsignedResize) (Var y))) (fun _u =>
+      Binop binop.Add (Var y) (Const (t:=Bits n) (Zmod.of_Z _ (-1))))).
+
+    Definition cycle {var} := Fn (var:=var) (fun z =>
+      eexpr.Let "r" (Call (pred(n:=8)) (Call succ (Var z))) (fun r =>
+      Var r)).
+
+    Lemma interp_cycle : interp cycle = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
+    Proof. cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp]. trivial. Qed.
+
+    Lemma ok_cycle z : interp cycle z = z.
+    Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
+
+    Definition lifted_cycle {var} : fn var _ _ := ltac2:(let e := let_lift_fns 'cycle in exact $e).
+
+    Example let_lift_cycle : @lifted_cycle = @cycle.
+    Proof. cbv beta delta [lifted_cycle]. cbv beta delta [cycle pred succ]. trivial. Qed.
+  End Private_example_global_polyfn.
+
+  Module Private_example_global_eexpr.
+    Definition succ {var} (x : var (Bits 8)) : eexpr var (fn var) (Bits 8) :=
+     Binop binop.Add (Var x) (Const (t:=Bits 8) (bits.of_Z 8 1)).
+    Definition pred {var} {n} (y : var (Bits n)) : eexpr var (fn var) (Bits n) :=
+      eexpr.Let "_u" (Call (Fn(var:=var) succ) (Unop unop.UnsignedResize (Var y))) (fun _u =>
+      Binop binop.Add (Var y) (Const (t:=Bits n) (bits.of_Z n (-1)))).
+    Definition cycle {var} (z : var (Bits 8)) : eexpr var (fn var) (Bits 8) := (
+      eexpr.Let "r" (Call (Fn (pred(n:=8))) (Call (Fn succ) (Var z))) (fun r =>
+      Var r)).
+    Lemma interp_cycle : interp (Fn cycle) = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
+    Proof. cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp]. trivial. Qed.
+    Lemma ok_cycle z : interp (Fn cycle) z = z.
+    Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
+  End Private_example_global_eexpr.
+End fn.
+
+Module fns. (* deeply embedded environments of functions *)
+  Import expr eexpr.
   Section WithSubstitutionType.
-  Context {var: type -> Type}.
-  Fixpoint bind {A B} (a : flat var A) (b : A -> flat var B) : flat var B :=
-    match a with
-    | Let x e C => Let x e (fun v => bind (C v) b)
-    | Upd e i v C => Upd e i v (fun v => bind (C v) b)
-    | MatchEither e l r C => MatchEither e l r (fun v => bind (C v) b)
-    | Ret a => b a
-    end.
+    Context {var : type -> Type}.
+    Context {fn : type -> type -> Type}.
+    Inductive fns {a b} :=
+    | Let {a b} (func_name_hint arg_name_hint : string) (f : var a -> eexpr var fn b) (_ : fn a b -> fns)
+    | Ret (arg_name_hint : string) (_ : var a -> eexpr var fn b).
   End WithSubstitutionType.
-End flat.
-Notation flat := flat.flat (only parsing).
+  Arguments fns : clear implicits.
 
-Module flatten.
-  Section WithSubstitutionType.
-  Context {var: type -> Type}.
-  Fixpoint expr {t} (e : expr var t) : flat var (flat.expr var t) :=
-    match e in expr _ t return flat var (flat.expr var t) with
-    | expr.Var x => flat.Ret (flat.Var x)
-    | expr.Const c => flat.Ret (flat.Const c)
-    | expr.Unop u e => flat.bind (expr e) (fun v => flat.Ret (flat.Unop u v))
-    | expr.Binop u e1 e2 =>
-      flat.bind (expr e1) (fun v1 =>
-      flat.bind (expr e2) (fun v2 =>
-      flat.Ret (flat.Binop u v1 v2)))
-    | expr.Cond e1 e2 e3 =>
-      flat.bind (expr e1) (fun v1 =>
-      flat.bind (expr e2) (fun v2 =>
-      flat.bind (expr e3) (fun v3 =>
-      flat.Ret (flat.Cond v1 v2 v3))))
-    | expr.Get e1 e2 =>
-      flat.bind (expr e1) (fun v1 =>
-      flat.bind (expr e2) (fun v2 =>
-      flat.Ret (flat.Get v1 v2)))
-    | expr.Let x e C =>
-      flat.bind (expr e) (fun e =>
-      flat.let_ x e (fun v => expr (C v)))
-    | expr.Upd es ei e3 =>
-      flat.bind (expr es) (fun es =>
-      flat.bind (expr ei) (fun ei =>
-      flat.let_ "$eupd" (flat.Get es ei) (fun ef =>
-      flat.bind (expr (e3 ef)) (fun ef =>
-      flat.Upd es ei ef (fun es => flat.Ret (flat.Var es))))))
-    | expr.MatchEither _ _ _ => _
+  Fixpoint interp {a b} (fs : fns type.interp type.interpfn a b) : a -> b :=
+    match fs with
+    | Let _ _ f C => let f := fun a => eexpr.interp (f a) in interp (C f)
+    | Ret _ f => fun a => eexpr.interp (f a)
     end.
 
-    Fixpoint action {s t} (a : action var s t) : (var s -> flat var (flat.expr var s * flat.expr var t)) :=
-      match a in action _ s t return (var s -> flat var (flat.expr var s * flat.expr var t)) with
-      | action.Ret e => fun s =>
-        flat.bind (expr (e s)) (fun e => flat.Ret (flat.Var s, e))
-      | action.Put e => fun s =>
-        flat.bind (expr (e s)) (fun e =>
-        flat.Ret (e, @flat.Const _ Unit Zmod.zero ))
-      | action.Bind x a aC => fun s =>
-        flat.bind (action a s) (fun '(es, ev) =>
-        flat.let_ (x++"$s") es (fun s =>
-        flat.let_ x ev (fun v =>
-        action (aC v) s)))
-      | action.Upd ei fv => fun s =>
-        flat.bind (expr (ei s)) (fun ei =>
-        flat.let_ "$aupd" (flat.Get (flat.Var s) ei) (fun fs =>
-        flat.bind (action (fv s) fs) (fun '(rs, rv) =>
-        flat.Upd (flat.Var s) ei rs (fun s =>
-        flat.Ret (flat.Var s, rv)))))
-      | action.Cond c a1 a2 => fun s =>
-        flat.bind (action a1 s) (fun '(s1, e1) =>
-        flat.bind (action a2 s) (fun '(s2, e2) =>
-        flat.bind (expr (c s)) (fun c =>
-        flat.Let "$acs" (flat.Cond c (s1) (s2)) (fun s =>
-        flat.Let "$ace" (flat.Cond c e1 e2) (fun e =>
-        flat.Ret (flat.Var s, flat.Var e))))))
-      end.
-  End WithSubstitutionType.
+    Import Printf.
 
-  (*
-  Theorem correct:
-    forall env_t ret (a: action.action type.interp env_t ret) (env: env_t),
-      expr.interp (compile a env) = action.interp a env.
-  Proof.
-    (* TODO: Fix proof. *)
-    induction a; intros; cbn; auto.
-    - intros. rewrite IHa. rewrite H. case_match; auto.
-    - intros. case_match. rewrite H. rewrite H0. auto.
-  Qed.
-     *)
-End flatten.
+  Local Ltac2 rec rdelta (x : constr) : constr :=
+    let oref := match Unsafe.kind x with
+                | Unsafe.Constant cst _ => Some (Std.ConstRef cst)
+                | Unsafe.Var id => Some (Std.VarRef id)
+                | _ => None
+                end in
+    match oref with | None => x | Some ref =>
+    let x' := eval cbv delta [$ref] in $x in
+    if Constr.equal x x' then x
+    else rdelta x' end.
 
-From quartz Require VerilogSyntax.
+  Ltac2 package_global_fns var fn e :=
+    let tODO := constr:("tODO"%string) in
+    let tga := lazy_match! Constr.type e with forall var, fn.fn var ?a ?b => a end in
+    let tgb := lazy_match! Constr.type e with forall var, fn.fn var ?a ?b => b end in
+    let e := rdelta e in
+    let e := eval cbv beta iota in ($e $var) in
+    let oldfn := constr:(fn.fn $var) in
+    let fnLet := constr:(@Let $var $fn $tga $tgb) in
+    let fnRet := constr:(@Ret $var $fn $tga $tgb) in
+    let rec app_lets (e : constr) (a : constr) : constr :=
+      match UConstr.kind e with
+      | UConstr.LetIn bf e c =>
+        match UConstr.kind e with
+        | UConstr.Lambda bv e =>
+          let e := UConstr.substnl [a] 0 e in
+          printf "c %t" c;
+          let lm := UConstr.make (UConstr.Lambda bv (UConstr.make (UConstr.Rel 2))) in
+          let c := UConstr.substnl [lm] 0 (UConstr.liftn 1 2 c) in
+          printf "c' %t" c;
+          UConstr.make (UConstr.LetIn bf e (app_lets c a))
+        | _ => 
+          printf "OTHERLET %t" e;
+          UConstr.make (UConstr.LetIn bf e (app_lets c a))
+        end
+      | _ => printf "OTHER %t" e; e
+    end in
+    let e := fn.let_lift_fns e in
+    printf "%t" e; printf "==>";
+    let e := app_lets e var in
+    printf "%t" e;
+    let rec replace_fn (e : constr) :=
+      if Constr.equal e oldfn
+      then fn else
+      UConstr.map replace_fn e in
+    let rec shallow_reify (e : constr) :=
+      match UConstr.kind e with
+      | UConstr.LetIn b body c =>
+        match Constr.decompose_app_list body with 
+        | (f, [var'; ta; t; body]) =>
+          if Bool.neg (Constr.equal f constr:(@fn.Fn)) then e else
+          if Bool.neg (Constr.equal var' var) then e else
+          let bt := UConstr.make (UConstr.App fn [|ta;t|]) in
+          let b := Constr.Binder.unsafe_make (Binder.name b) (Binder.relevance b) bt in
+          let c := UConstr.make (UConstr.Lambda b (shallow_reify c)) in
+          UConstr.make (UConstr.App fnLet [|ta; t; tODO; tODO; replace_fn body; c|])
+        | _ => e
+        end
+      | _ =>
+        match Constr.decompose_app_list e with 
+        | (f, [var'; ta; t; body]) =>
+           if Bool.neg (Constr.equal f constr:(@fn.Fn)) then e else
+           if Bool.neg (Constr.equal var' var) then e else
+           UConstr.make (UConstr.App fnRet [|tODO; replace_fn body|])
+        | _ => printf "OTHER %t" e; e
+        end
+    end in
+    shallow_reify e.
 
-Require Import AdmitAxiom.
-
-Module verilog.
-  Import (notations)ListNotations.
-  Import -(notations,options)VerilogSyntax.
-  Import flat.
-  Local Unset Asymmetric Patterns.
-  Section WithVerilogIdentifier.
-    Context {VId : Set} (field_name : string -> VId).
-    Local Notation VExpr := (VExpr (VId:=VId)).
-    Context {gensym_state : Type} (gensym : gensym_state -> string -> VId * gensym_state).
-    Let var (_ : type) := VId.
-
-    Definition VPairNew : VExpr -> VExpr -> VExpr. Admitted.
-    Definition VPairFst : VExpr -> VExpr. Admitted.
-    Definition VPairSnd : VExpr -> VExpr. Admitted.
-
-    Fixpoint const {t : type} : t -> VExpr :=
-      match t return t -> VExpr with
-      | Bool => fun v => VExprPriLiteral (VIntegralBinary (Some 1) (Z.b2z v))
-      | Bits n => fun v =>
-          VExprPriLiteral (
-          (if Z.ltb n 8 return _->_->VIntegralNumber
-            then VDecimalNumberB else VIntegralHex)
-          (Some n) (Zmod.unsigned v))
-      | _ => fun _ => ltac:(admit)
-      end.
-
-    Fixpoint lvalue (c : typeWithHole) (e : VExpr) : expr var c -> VExpr :=
-      match c return expr var c -> VExpr with
-      | typeWithHole.HOLE => fun _ => e
-      | typeWithHole.Struct _ n c _ =>
-        lvalue c (VExprHier e (VExprId (field_name n)))
-      | typeWithHole.PairL c _ | typeWithHole.PairR _ c => lvalue c e
-      | typeWithHole.Array _ c _ => (* fun i => lvalue (VExprPriSelect  e _) (snd i) *) ltac:(admit)
-      end.
-
-    Definition signed (e : VExpr) : VExpr := VExprSystemTfCall VSystemTfSigned [e].
-
-    Definition unsigned (e : VExpr) : VExpr := VExprSystemTfCall VSystemTfUnsigned [e].
-
-    Definition unop {a b} (o : unop a b) : VExpr -> VExpr :=
-      match o with
-      | unop.IsZero => VExprUniOp VUniNot
-      | unop.Not => VExprUniOp VUniNeg
-      | unop.Opp => VExprUniOp VUniMinus
-      | @unop.UnsignedResize n m => VExprCast (VExprPriLiteral (VDecimalNumberNB m))
-      | @unop.SignedResize n m => fun e =>
-        unsigned (VExprCast (VExprPriLiteral (VDecimalNumberNB m)) (signed e))
-      end.
-
-    Definition compare (c : binop.compare) :=
-      match c with
-      | binop.cLt => VBinLt
-      | binop.cGt => VBinGt
-      | binop.cLe => VBinLe
-      | binop.cGe => VBinGe
-      end.
-
-    Definition binop {a b c} (o : binop a b c) : VExpr -> VExpr -> VExpr :=
-      match o with
-      | binop.Add => VExprBinOp VBinAdd
-      | binop.And => VExprBinOp VBinLAnd
-      | binop.Or => VExprBinOp VBinLOr
-      | binop.Slu => VExprBinOp VBinShl
-      | binop.Sru => VExprBinOp VBinShr
-      | binop.Srs => fun a b => VExprBinOp VBinSar (signed a) b
-      | binop.EqBits => VExprBinOp VBinEq
-      | binop.Compare s c => fun a b => VExprBinOp (compare c)
-          (if s then signed a else unsigned a)
-          (if s then signed b else unsigned b)
-      | binop.MkPair => VPairNew
-      end.
-
-    Fixpoint expr {t} (e : expr var t) : VExpr :=
-      match e with
-      | Var x => VExprId x
-      | Const c => const c
-      | Cond c t f => VExprCond (@expr _ c) (@expr _ t) (@expr _ f)
-      | Unop o e => unop o (@expr _ e)
-      | Binop o a b => binop o (@expr _ a) (@expr _ b)
-      | @Get _ c _ e i => lvalue c (expr e) i
-      end.
-
-    Fixpoint stmts {a b} (s : flat var (flat.expr var a * flat.expr var b)) (g : gensym_state) (fs ft : VId) : list (@VStatementItem VId) :=
-      match s with
-      | Let x ex eC =>
-          let '(x, g) := gensym g x in
-          VStatementItemBlockingAssignNormal (VExprId x) (expr ex) ::
-          @stmts _ _ (eC x) g fs ft
-      | @Upd _ _ c _ e i v eC =>
-          let '(x, g) := gensym g EmptyString in
-          VStatementItemBlockingAssignNormal (VExprId x) (expr e) ::
-          VStatementItemBlockingAssignNormal (lvalue c (VExprId x) i) (expr v) ::
-          @stmts _ _ (eC x) g fs ft
-      | Ret (a, b) =>
-          VStatementItemBlockingAssignNormal (VExprId fs) (expr a) ::
-          VStatementItemBlockingAssignNormal (VExprId ft) (expr b) ::
-          nil
-      end.
-  End WithVerilogIdentifier.
-End verilog.
-
-Local Open Scope string_scope.
-Module fifo1. (* Example module *)
-  Section WithElementType.
-  Import typeWithHole expr action.
-  Context {t : type}. (* Compile-time module parameter *)
-
-  #[projections(primitive)]
-  Record state := { len : bool; data : t }.
-
-  (* Value method -- does not modiy, state can be used inside [expr] *)
-  Definition peek {var} (s : this var (type.reify'' state)) : expr var t := quartz_expr:(
-    this! at data).
-
-  (* Action method -- modifies state, return Unit *)
-  Definition enq {var} (d : var t) : action var (type.reify'' state) Unit := quartz_action:(
-    len = true;
-    data = #d).
-
-  (* ActionValue method -- modifies state, returns a value *)
-  Definition deq {var} : action var (type.reify'' state) t := quartz_action:(
-    len = false;
-    return this! at data).
-
-  (* For specifications, compute the representation of native-record [state] *)
-  Coercion rep (v : state) : type.reify'' state :=
-    ltac2:(let t := struct.rep &v in exact $t).
-
-  Import Datatypes type.
-
-  (* Example specifications and proofs. Code can be symbolically evaluated by
-   * reduction even if [t] is abstract. See [typeWithHole.Struct] and [get]. *)
-
-  Lemma peek_ok (s : state) : expr.interp (peek (rep s)) = s.(data).
-  Proof. trivial. Qed.
-
-  Lemma enq_ok (s : state) x :
-    action.interp (enq x) s = (rep {| len := true; data := x |}, tt ).
-  Proof. trivial. Qed.
-
-  Lemma deq_ok (s : state) :
-    action.interp deq s = (rep {| len := false; data := s.(data) |}, s.(data) ).
-  Proof. trivial. Qed.
-  End WithElementType.
-End fifo1.
-
-Module Private_CompilationExample.
-Require Import DecimalString.
-Definition gensym_st : Type := list string * Z.
-Definition gensym (st : gensym_st) (s : string) : string * gensym_st :=
-  let (st, n) := st in
-  if orb (String.eqb "" s) (List.existsb (String.eqb s) st)
-  then let s := s ++ "$" ++ NilEmpty.string_of_int (Z.to_int n) in (s, (cons s st, n+1))
-  else (s, (cons s st, n)).
-Import VerilogSyntax expr action fifo1.
-Local Notation "verilog_stmt:( t ')'" := t (t custom verilog_stmt).
-Local Notation "$ x" := (x) (x constr at level 0, in custom verilog_expr at level 1).
-Local Notation V := VExprId.
-Compute let INPUT:="INPUT" in
-  verilog.stmts id gensym (flatten.action (quartz_action:(
-    enq INPUT;
-    let x <- deq in
-    return
-      let v := peek this! in (* value method call *)
-      #v == #x
-  )) "STATE") (nil, 0) "STATE" "OUTPUT".
-
-(* ...which in slightly less verbose concrete syntax gives:
-tr -dc "[:alnum:]_ \n=$'."|sed s/verilog_stmt//g|sed s/VExprId//g|sed -e 's/\s\s*/ /g'|sed 's/\$ //g'|sed 's/V //g'
-$aupd = STATE.len
-$0 = STATE
-$0.len = 1'b1
-$Seq = 0'd0
-$aupd$1 = $0.data
-$2 = $0
-$2.data = INPUT
-$Seq$3 = 0'd0
-$aupd$4 = $2.len
-$5 = $2
-$5.len = 1'b0
-$Seq$6 = 0'd0
-$bind = $5.data
-$let = $5.data
-STATE = $5
-OUTPUT = $let == $bind
- *)
-
-(* NEXT STEPS:
-   - Flesh out nested-field and array-index access
-   - Test (and likely finish up) method calls with nontrivial wrapper modules
-   - Fill in remaining cases of translation to verilog
-   - Print verilog abstract syntax as concrete syntax
-     - Reference: https://github.com/Cherified/Guru/blob/main/PrettyPrinter/CodePrinter.hs
-   - More notations (Binops, action let, ...)
-     - Reference: https://github.com/mit-plv/bedrock2/blob/master/bedrock2/src/bedrock2/NotationsCustomEntry.v#L9
-     - Reference: https://github.com/mit-plv/fiat2/blob/main/fiat2/src/fiat2/Notations.v#L158
-     - Reference: VerilogSyntax.v
-   - Investigate whether it's worth trying to generate fewer intermediate assignments
-   - Prove compiler correctness
-*)
-End Private_CompilationExample.
-
-Module Export more. Module type.
-  Import type.
-  Fixpoint eq_dec (a b : type) : { a = b } + { a <> b }. refine
-    match a, b with
-    | Bool, Bool => left eq_refl
-    | Bits a, Bits b =>
-        match Z.eq_dec a b with left _ => left _ | right _ => right _ end
-    | Struct a, Struct b =>
-        match list_eq_dec (fun '(sa, a) '(sb, b) =>
-          match string_dec sa sb, eq_dec a b with left _, left _ => left _ | _, _ => right _ end
-        ) a b with | left _ => left _ | right _ => right _ end
-    | Pair a1 a2, Pair b1 b2 =>
-        match eq_dec a1 b1, eq_dec a2 b2 with | left _, left _ => left _ | _, _ => right _ end
-    | Array a n, Array b m =>
-        match eq_dec a b, PeanoNat.Nat.eq_dec n m with | left _, left _ => left _ | _, _ => right _ end
-    | _, _ => right _
-    end.
-    all : subst; trivial; abstract congruence.
-  Defined.
-
-  Lemma eq_dec_refl t : eq_dec t t = left eq_refl.
-  Proof.
-    destruct eq_dec; [|contradiction].
-    apply f_equal, Eqdep_dec.UIP_dec, type.eq_dec.
-  Qed.
-End type. End more.
+  Module Private_example_wholeprogramdef.
+    Local Open Scope string_scope.
+    Example cycle {var fn} : fns var fn (Bits 8) (Bits 8) :=
+      Let "succ" "x" (fun x => Binop binop.Add (Var x) (Const (t:=Bits 8) (Zmod.of_Z _ 1))) (fun succ => 
+      Let "pred" "y" (fun y =>
+        eexpr.Let "_u" (Call succ (Unop unop.UnsignedResize (Var y))) (fun _u =>
+        Binop binop.Add (Var y) (Const (t:=Bits 8) (Zmod.of_Z _ (-1))))) (fun pred => 
+      Ret "z" (fun z =>
+        eexpr.Let "r" (Call pred (Call succ (Var z))) (fun r =>
+        Var r)))).
+    Lemma interp_cycle : interp cycle = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
+    Proof. cbn [cycle interp eexpr.interp expr.interp binop.interp]. trivial. Qed.
+    Lemma ok_cycle z : interp cycle z = z.
+    Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
+    Lemma interpF : interp cycle = fn.interp fn.Private_example_global_fn.cycle.
+    Proof. trivial. Qed.
+    Lemma interpE : interp cycle = fn.interp (fn.Fn fn.Private_example_global_eexpr.cycle).
+    Proof. trivial. Qed.
+    Lemma interpL : interp cycle = fn.interp fn.Private_example_global_fn.lifted_cycle.
+    Proof.
+      cbv beta iota delta [interp cycle].
+      cbv beta iota delta [fn.interp fn.body fn.Private_example_global_fn.lifted_cycle].
+      trivial.
+    Qed.
+    Definition packaged_cycle {var fn} : fns _ _ _ _ := ltac2:(
+      let e := package_global_fns &var &fn constr:(@fn.Private_example_global_fn.cycle) in exact $e).
+    Lemma packaged_ok : interp packaged_cycle = fn.interp fn.Private_example_global_fn.cycle.
+    Proof. cbn beta iota delta [interp packaged_cycle]. trivial. Qed.
+  End Private_example_wholeprogramdef.
+End fns.
+Local Notation fns := fns.fns (only parsing).
