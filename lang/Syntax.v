@@ -458,7 +458,13 @@ Module fn.
       Var r)).
 
     Lemma interp_cycle : interp cycle = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
-    Proof. cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp]. trivial. Qed.
+    Proof.
+      cbn [cycle            interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
+      (* (fun v : Bits 8 => interp pred (interp succ v)) *)
+      cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
+      (* = RHS *)
+      trivial.
+    Qed.
 
     Lemma ok_cycle z : interp cycle z = z.
     Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
@@ -469,7 +475,7 @@ Module fn.
     Proof. cbv beta delta [lifted_cycle]. cbv beta delta [cycle pred succ]. trivial. Qed.
   End Private_example_global_fn.
 
-  Module Private_example_global_polyfn.
+  Module Private_example_global_polyfn. (* polymorphic functions can't be packaged yet *)
     Definition succ {var} : fn var (Bits 8) (Bits 8) := Fn (fun x =>
       Binop binop.Add (Var x) (Const (t:=Bits 8) (Zmod.of_Z _ 1))).
 
@@ -492,21 +498,6 @@ Module fn.
     Example let_lift_cycle : @lifted_cycle = @cycle.
     Proof. cbv beta delta [lifted_cycle]. cbv beta delta [cycle pred succ]. trivial. Qed.
   End Private_example_global_polyfn.
-
-  Module Private_example_global_eexpr.
-    Definition succ {var} (x : var (Bits 8)) : eexpr var (fn var) (Bits 8) :=
-     Binop binop.Add (Var x) (Const (t:=Bits 8) (bits.of_Z 8 1)).
-    Definition pred {var} {n} (y : var (Bits n)) : eexpr var (fn var) (Bits n) :=
-      eexpr.Let "_u" (Call (Fn(var:=var) succ) (Unop unop.UnsignedResize (Var y))) (fun _u =>
-      Binop binop.Add (Var y) (Const (t:=Bits n) (bits.of_Z n (-1)))).
-    Definition cycle {var} (z : var (Bits 8)) : eexpr var (fn var) (Bits 8) := (
-      eexpr.Let "r" (Call (Fn (pred(n:=8))) (Call (Fn succ) (Var z))) (fun r =>
-      Var r)).
-    Lemma interp_cycle : interp (Fn cycle) = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
-    Proof. cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp]. trivial. Qed.
-    Lemma ok_cycle z : interp (Fn cycle) z = z.
-    Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
-  End Private_example_global_eexpr.
 End fn.
 
 Module fns. (* deeply embedded environments of functions *)
@@ -599,28 +590,6 @@ Module fns. (* deeply embedded environments of functions *)
 
   Module Private_example_wholeprogramdef.
     Local Open Scope string_scope.
-    Example cycle {var fn} : fns var fn (Bits 8) (Bits 8) :=
-      Let "succ" "x" (fun x => Binop binop.Add (Var x) (Const (t:=Bits 8) (Zmod.of_Z _ 1))) (fun succ => 
-      Let "pred" "y" (fun y =>
-        eexpr.Let "_u" (Call succ (Unop unop.UnsignedResize (Var y))) (fun _u =>
-        Binop binop.Add (Var y) (Const (t:=Bits 8) (Zmod.of_Z _ (-1))))) (fun pred => 
-      Ret "z" (fun z =>
-        eexpr.Let "r" (Call pred (Call succ (Var z))) (fun r =>
-        Var r)))).
-    Lemma interp_cycle : interp cycle = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
-    Proof. cbn [cycle interp eexpr.interp expr.interp binop.interp]. trivial. Qed.
-    Lemma ok_cycle z : interp cycle z = z.
-    Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
-    Lemma interpF : interp cycle = fn.interp fn.Private_example_global_fn.cycle.
-    Proof. trivial. Qed.
-    Lemma interpE : interp cycle = fn.interp (fn.Fn fn.Private_example_global_eexpr.cycle).
-    Proof. trivial. Qed.
-    Lemma interpL : interp cycle = fn.interp fn.Private_example_global_fn.lifted_cycle.
-    Proof.
-      cbv beta iota delta [interp cycle].
-      cbv beta iota delta [fn.interp fn.body fn.Private_example_global_fn.lifted_cycle].
-      trivial.
-    Qed.
     Definition packaged_cycle {var fn} : fns _ _ _ _ := ltac2:(
       let e := package_global_fns &var &fn constr:(@fn.Private_example_global_fn.cycle) in exact $e).
     Lemma packaged_ok : interp packaged_cycle = fn.interp fn.Private_example_global_fn.cycle.
