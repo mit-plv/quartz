@@ -742,7 +742,7 @@ Module sv.
     | @binop.Or n => "("++e1_str++" | "++e2_str++")"
     | @binop.Slu n m => "("++e1_str++" << "++e2_str++")"
     | @binop.Sru n m => "("++e1_str++" >> "++e2_str++")"
-    | @binop.Srs n m => "($signed("++e1_str++") >>> "++e2_str++")"
+    | @binop.Srs n m => "$unsigned(($signed("++e1_str++") >>> "++e2_str++"))"
     | @binop.EqBits n => "("++e1_str++" == "++e2_str++")"
     | @binop.Compare signed c n =>
         let op_str := match c with
