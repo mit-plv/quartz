@@ -1,3 +1,4 @@
+#[export] Set Primitive Projections.
 From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
 From Stdlib Require Import BinInt Bits.
 From Stdlib Require Import String List.
@@ -15,7 +16,7 @@ Module type.
   | Bits (sz: Z)
   | Pair (_ _ : type)
   | Either (_ _ : type)
-  | Struct (_ : list (string * type))
+  | Struct (name : string) (_ : list (string * type))
   | Array (t: type) (sz: nat).
   Notation Unit := (Bits 0) (only parsing).
 
@@ -25,13 +26,13 @@ Module type.
     | Bits sz => bits sz
     | Pair a b => interp a * interp b
     | Either a b => interp a + interp b
-    | Struct nts => fold_right (fun nt T => interp (snd nt) * T)%type unit nts
+    | Struct _ nts => fold_right (fun nt T => interp (snd nt) * T)%type unit nts
     | Array t n => Vector.t (interp t) n
     end.
   Definition interpfn a b := interp a -> interp b.
 
   Definition struct := list (string * type).
-  Definition Struct_ : struct -> type := Struct.
+  Definition Struct_ : struct -> type := Struct "".
   Coercion Struct_ : struct >-> type.
 
   Coercion type.interp: type >-> Sortclass.
@@ -56,7 +57,7 @@ Module type.
     | Bits sz => Zmod.zero
     | Pair a b => (default a, default b)
     | Either a b => inl (default a) (* TODO: confirm this *)
-    | Struct s => default_struct default s
+    | Struct _ s => default_struct default s
     | Array t n => default_array default t n
     end.
 
@@ -87,7 +88,8 @@ Module type.
           let rt := reify t in
           constr:(cons ($n, $rt) $acc)
         ) pp constr:(@nil (String.string * type)) in
-      constr:(type.Struct $r)
+      let basename := constr_string_of_ident (List.last (Env.path (Std.IndRef ind))) in
+      constr:(type.Struct $basename $r)
     | _ => Control.throw (ReifyUnknown t)
   end end.
 
@@ -113,7 +115,7 @@ Module struct.
     | nil => fun _ => tt
     | cons nt s =>
         let b := String.eqb (fst nt) n in
-        if b return Struct (nt::s) -> type.interp (if b then _ else _)
+        if b return Struct _ (nt::s) -> type.interp (if b then _ else _)
         then fst
         else fun v => get n (snd v)
     end.
@@ -124,7 +126,7 @@ Module struct.
     | cons nt s =>
         let b := String.eqb (fst nt) n in
         if b return let t := type.interp (if b then _ else _) in
-                    Struct (nt::s) -> (t -> t) -> Struct (nt::s)
+                    Struct _ (nt::s) -> (t -> t) -> Struct _ (nt::s)
         then fun v f => (f (fst v), snd v)
         else fun v f => (fst v, @upd _ n (snd v) f)
     end.
@@ -140,6 +142,7 @@ Module struct.
   Local Example get_ab_c : @get [("a", Bits 7); ("b", Bool)] "c" = fun r => tt.
   Proof. cbv [get fst snd String.eqb Ascii.eqb Bool.eqb Struct_ interp fold_right]. trivial. Qed.
 
+  Ltac2 Type exn ::= [ RepUnknown (constr) ].
   Ltac2 rep v :=
     match UConstr.kind (Constr.type v) with
     | UConstr.Ind ind inst =>
@@ -150,7 +153,7 @@ Module struct.
         let e := constr:($e $v) in
         constr:(pair $e $acc)
         ) arrproj 'Datatypes.tt
-    | _ => Control.throw (type.ReifyUnknown (Constr.type v))
+    | _ => Control.throw (RepUnknown (Constr.type v))
     end.
 End struct.
 
@@ -230,7 +233,7 @@ Module typeWithHole.
   | HOLE
   | PairL (t1 : typeWithHole) (t2: type)
   | PairR (t1 : type) (t2: typeWithHole)
-  | Struct (l : struct) (n : string) (t : typeWithHole) (r : struct)
+  | Struct (sn : string) (l : struct) (n : string) (t : typeWithHole) (r : struct)
      {NoDup_by_fun_eq_refl : forall t, struct.fieldType (l ++ (n, t) :: r) n = t}
   | Array (sz : nat) (t : typeWithHole) (index_width : Z).
 
@@ -239,14 +242,14 @@ Module typeWithHole.
     | HOLE => t
     | PairL t1 t2 => type.Pair (plug t1 t) t2
     | PairR t1 t2 => type.Pair t1 (plug t2 t)
-    | Struct l n C r => type.Struct (l ++ cons (n, plug C t) r)
+    | Struct sn l n C r => type.Struct sn (l ++ cons (n, plug C t) r)
     | Array sz t' _ => type.Array (plug t' t) sz
     end.
 
   Fixpoint indices (t : typeWithHole) : type :=
     match t with
     | HOLE => Unit
-    | PairL t _ | PairR _ t | Struct _ _ t _ => indices t
+    | PairL t _ | PairR _ t | Struct _ _ _ t _ => indices t
     | Array sz t n => Pair (Bits n) (indices t)
     end.
 
@@ -255,7 +258,7 @@ Module typeWithHole.
     | HOLE => fun t r i => r
     | PairL a b => fun _ r i => get a _ (fst r) i
     | PairR a b => fun _ r i => get b _ (snd r) i
-    | @Struct _ n t _ pf => fun _ r i => get t _ (eq_rect _ _ (struct.get n r) _ (pf _)) i
+    | @Struct _ _ n t _ pf => fun _ r i => get t _ (eq_rect _ _ (struct.get n r) _ (pf _)) i
     | Array sz t _ => fun _ r i => get t _
         (List.nth_default (default _) (Vector.to_list r) (Z.to_nat (Zmod.unsigned (fst i)))) (snd i)
     end.
@@ -266,20 +269,21 @@ Module typeWithHole.
     | HOLE => fun t r i f => f r
     | PairL a b => fun _ r i f => (upd a _ (fst r) i f, snd r)
     | PairR a b => fun _ r i f => (fst r, upd b _ (snd r) i f)
-    | @Struct _ n t _ pf => fun _ r i f =>
+    | @Struct _ _ n t _ pf => fun _ r i f =>
         struct.upd n r (eq_rect (plug t _) (fun u => u -> u) (fun v => upd t _ v i f) _ (eq_sym (pf _)))
     | Array sz t _ => fun _ r i f =>
         Vector.upd r (Z.to_nat (Zmod.unsigned (fst i))) (fun r => upd _ _ r (snd i) f)
     end.
   Arguments upd {_ _}.
 
+  Ltac2 Type exn ::= [ ReifyFieldUnknown (constr) ].
   Ltac2 reify_field p0c :=
     match UConstr.kind p0c with
     | UConstr.Constant c0 inst =>
       match Proj.of_constant c0 with
       | Some p0 =>
         lazy_match! type.reify (UConstr.make (UConstr.Ind (Proj.ind p0) inst)) with
-        | type.Struct ?rs =>
+        | type.Struct ?sn ?rs =>
     let rec firstn n l := if Int.le n 0
       then lazy_match! l with nil => l | @cons ?t _ _ => constr:(@nil $t) end
       else lazy_match! l with @cons ?t ?x ?l => let l := firstn (Int.sub n 1) l in constr:(@cons $t $x $l) end in
@@ -288,12 +292,12 @@ Module typeWithHole.
           let l := firstn (Proj.index p0) rs in
           let (n, t) := lazy_match! hd (skipn (Proj.index p0) rs) with (?n, ?t) => (n, t) end in
           let r := skipn (Int.add 1 (Proj.index p0)) rs in
-          (constr:(@Struct $l $n HOLE $r (fun _ => eq_refl)), t)
-        | _ => Control.throw (type.ReifyUnknown p0c)
+          (constr:(@Struct $sn $l $n HOLE $r (fun _ => eq_refl)), t)
+        | _ => Control.throw (ReifyFieldUnknown p0c)
         end
-      | _ => Control.throw (type.ReifyUnknown p0c)
+      | _ => Control.throw (ReifyFieldUnknown p0c)
       end
-    | _ => Control.throw (type.ReifyUnknown p0c)
+    | _ => Control.throw (ReifyFieldUnknown p0c)
     end.
 End typeWithHole.
 Notation typeWithHole :=typeWithHole.typeWithHole (only parsing).
@@ -335,23 +339,61 @@ Module expr.
 
   Declare Custom Entry quartz_expr.
   Notation "quartz_expr:( e )" := e (e custom quartz_expr, only parsing).
+
+  Notation "( e )" := e (in custom quartz_expr, e custom quartz_expr at level 200).
   Notation "# v" := (expr.Var v) (in custom quartz_expr at level 0, v constr at level 0, format "'#' v").
   Notation "$ v" := v (in custom quartz_expr at level 0, v constr at level 0, format "'$' v").
-  Notation "x" := (x) (in custom quartz_expr, x global, only parsing).
-  Notation "f x" := (f x) (in custom quartz_expr at level 10).
-  Notation "x == y" := (Binop (binop.EqBits) x y) (in custom quartz_expr at level 70).
-  (*
-  Notation "'let' x := e1 'in' e2"        := (Let "$let" e1 (fun x => e2))
-    (in custom quartz_expr at level 200, x constr at level 0, e1 custom quartz_expr, e2 custom quartz_expr).
-   *)
+  (* Notation "x" := (x) (in custom quartz_expr at level 0, x global). *)
+  Notation "sz ''d' val" := (expr.Const (t:=Bits sz) (Zmod.of_Z _ val))
+    (in custom quartz_expr at level 0, sz constr at level 0, val constr at level 0, format "sz ''d' val").
+  Notation "'const' c" := (expr.Const c) (in custom quartz_expr at level 0, c constr at level 0).
+  Notation "f '(' e ')'" := (expr.Call f e)
+    (in custom quartz_expr at level 0, left associativity, f global, e custom quartz_expr at level 200).
+  Notation "r '..' f" := (expr.Get (ltac2:(let (c, _) := typeWithHole.reify_field (pretype f) in exact $c)) r expr.tt)
+    (in custom quartz_expr at level 1, left associativity, f global, r custom quartz_expr, only parsing).
+  Notation "r '[' i ']'" :=
+    (expr.Get (typeWithHole.Array _ typeWithHole.HOLE _) r (expr.Binop binop.MkPair i expr.tt))
+    (in custom quartz_expr at level 1, left associativity, i custom quartz_expr at level 200).
+  Notation "p '.1'" := (expr.Get (typeWithHole.PairL typeWithHole.HOLE _) p expr.tt)
+    (in custom quartz_expr at level 1, left associativity).
+  Notation "p '.2'" := (expr.Get (typeWithHole.PairR _ typeWithHole.HOLE) p expr.tt)
+    (in custom quartz_expr at level 1, left associativity).
+  Notation "r .[ C , i ]" := (expr.Get C r i)
+    (in custom quartz_expr at level 1, left associativity, C constr at level 0, i custom quartz_expr at level 200, format "r .[ C ,  i ]").
 
-  (*
-  Definition this (var : type -> Type) t := var t.
-  Notation "this!" := (ltac:(match goal with x : @this _ _ |- ?g => exact (Var x) || exact x end))
-    (in custom quartz_expr, only parsing).
-  Notation "v 'at' f" := (ltac2:(let (c, t) := typeWithHole.reify_field (pretype f) in let v := pretype v in eexact (Get (C:=$c) (t:=$t) $v tt)))
-    (in custom quartz_expr at level 10, f global, v custom quartz_expr, only parsing).
-   *)
+  Notation "'tt'" := (expr.tt) (in custom quartz_expr at level 0).
+  Notation "'false'" := (expr.false) (in custom quartz_expr at level 0).
+  Notation "'true'" := (expr.true) (in custom quartz_expr at level 0).
+  Notation "- e" := (expr.Unop unop.Opp e) (in custom quartz_expr at level 35, right associativity).
+  Notation "! e" := (expr.Unop unop.IsZero e) (in custom quartz_expr at level 35, right associativity).
+  Notation "~ e" := (expr.Unop unop.Not e) (in custom quartz_expr at level 35, right associativity).
+  Notation "'left' e" := (expr.Unop unop.Left e) (in custom quartz_expr at level 10, right associativity).
+  Notation "'right' e" := (expr.Unop unop.Right e) (in custom quartz_expr at level 10, right associativity).
+
+  Notation "'(' x ',' y ',' .. ',' z ')'" :=
+    (expr.Binop (@binop.MkPair _ _) .. (expr.Binop (@binop.MkPair _ _) x y) .. z)
+    (in custom quartz_expr at level 0, x custom quartz_expr at level 200,
+     y custom quartz_expr at level 200, z custom quartz_expr at level 200,
+     format "( '[' x , '/' y , '/' .. , '/' z ']' )").
+  Notation "e1 & e2" := (expr.Binop binop.And e1 e2) (in custom quartz_expr at level 40, left associativity).
+  Notation "e1 + e2" := (expr.Binop binop.Add e1 e2) (in custom quartz_expr at level 50, left associativity).
+  Notation "e1 | e2" := (expr.Binop binop.Or e1 e2) (in custom quartz_expr at level 50, left associativity).
+  Notation "e1 << e2" := (expr.Binop binop.Slu e1 e2) (in custom quartz_expr at level 60, left associativity).
+  Notation "e1 >> e2" := (expr.Binop binop.Sru e1 e2) (in custom quartz_expr at level 60, left associativity).
+  Notation "e1 .>> e2" := (expr.Binop binop.Srs e1 e2) (in custom quartz_expr at level 60, left associativity).
+
+  Notation "e1 == e2" := (expr.Binop binop.EqBits e1 e2) (in custom quartz_expr at level 70, no associativity).
+  Notation "e1 < e2" := (expr.Binop (binop.Compare Datatypes.false binop.cLt) e1 e2) (in custom quartz_expr at level 70, no associativity).
+  Notation "e1 <= e2" := (expr.Binop (binop.Compare Datatypes.false binop.cLe) e1 e2) (in custom quartz_expr at level 70, no associativity).
+  Notation "e1 > e2" := (expr.Binop (binop.Compare Datatypes.false binop.cGt) e1 e2) (in custom quartz_expr at level 70, no associativity).
+  Notation "e1 >= e2" := (expr.Binop (binop.Compare Datatypes.false binop.cGe) e1 e2) (in custom quartz_expr at level 70, no associativity).
+  Notation "e1 .< e2" := (expr.Binop (binop.Compare Datatypes.true binop.cLt) e1 e2) (in custom quartz_expr at level 70, no associativity).
+  Notation "e1 .<= e2" := (expr.Binop (binop.Compare Datatypes.true binop.cLe) e1 e2) (in custom quartz_expr at level 70, no associativity).
+  Notation "e1 .> e2" := (expr.Binop (binop.Compare Datatypes.true binop.cGt) e1 e2) (in custom quartz_expr at level 70, no associativity).
+  Notation "e1 .>= e2" := (expr.Binop (binop.Compare Datatypes.true binop.cGe) e1 e2) (in custom quartz_expr at level 70, no associativity).
+
+  Notation "'if' cond 'then' a 'else' b" := (expr.If cond a b)
+    (in custom quartz_expr at level 200, cond custom quartz_expr at level 200, a custom quartz_expr at level 200, b custom quartz_expr at level 200).
 End expr.
 Notation expr := expr.expr.
 
@@ -367,7 +409,7 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
     | Let (name_hint : string) {tx} (a : expr tx) {t} (aC : var tx -> eexpr t) : eexpr t
     | Bind (name_hint : string) {tx} (a : eexpr tx) {t} (aC : var tx -> eexpr t) : eexpr t
     | If {t} (_ : expr Bool) (a b : eexpr t) : eexpr t
-    | MatchEither {l r} (_ : expr (Either l r)) {t} (l : var l -> eexpr t) (r : var r -> eexpr t) : eexpr t
+    | Case {l r} (_ : expr (Either l r)) {t} (l : var l -> eexpr t) (r : var r -> eexpr t) : eexpr t
     | Upd {C : typeWithHole} (i : expr C) {t} (s := C t) (es : expr s) (v : expr t) : eexpr s.
   End WithSubstitutionType.
   Coercion Ret : expr >-> eexpr.
@@ -379,27 +421,37 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
     | Let _ a b => let x := expr.interp a in interp (b x)
     | Bind _ a b => let x := interp a in interp (b x)
     | If e a b => if expr.interp e then interp a else interp b
-    | MatchEither e l r => match expr.interp e with inl v => interp (l v) | inr v => interp (r v) end
+    | Case e l r => match expr.interp e with inl v => interp (l v) | inr v => interp (r v) end
     | Upd i s v => typeWithHole.upd (expr.interp s) (expr.interp i) (fun _ => expr.interp v)
     end.
 
-  (*
-  Declare Custom Entry quartz_action.
-  Notation "quartz_action:( a )" := a (a custom quartz_action, only parsing).
-  Notation "$ v" := v (in custom quartz_action at level 0, v constr at level 0, format "'$' v").
-  Notation "x" := (x) (in custom quartz_action, x global, only parsing).
-  Notation "f e" := (f e) (e custom quartz_expr, in custom quartz_action at level 10).
-  Notation "f = v" := (UpdPut (C:=ltac2:(let (r, _) := typeWithHole.reify_field (pretype f) in exact $r)) tt v)
-    (in custom quartz_action, f global, v custom quartz_expr, only parsing).
-  Notation "'let' x '<-' a1 'in' a2"        := (Bind "$bind" a1 (fun x => a2))
-    (in custom quartz_action at level 200, x constr at level 0, a1 custom quartz_action, a2 custom quartz_action).
-  Notation "a1 ; a2" := (Seq a1 a2)
-    (in custom quartz_action at level 1, right associativity, format "'[v' a1 ; '/' a2 ']'").
-  Notation "this!" := (ltac:(match goal with x : @this _ _ |- _ => exact (Var x) || exact x end))
-    (in custom quartz_action, only parsing).
-  Notation "'return' e" := (Ret (fun _ => e))
-    (in custom quartz_action at level 1, e custom quartz_expr).
-   *)
+  Declare Custom Entry quartz_eexpr.
+  Notation "quartz_eexpr:( e )" := e (e custom quartz_eexpr, only parsing).
+
+  Notation "( e )" := e (in custom quartz_eexpr, e custom quartz_eexpr at level 200).
+  Notation "$ v" := v (in custom quartz_eexpr at level 0, v constr at level 0, format "'$' v").
+  Notation "x" := (x) (in custom quartz_eexpr at level 0, x global).
+  Notation "'return' e" := (eexpr.Ret e)
+    (in custom quartz_eexpr at level 200, e custom quartz_expr at level 200).
+  Notation "'let' x ':=' a 'in' b" := (eexpr.Let "Let" a (fun x => b))
+    (in custom quartz_eexpr at level 200, x name, a custom quartz_expr at level 200, b custom quartz_eexpr at level 200, right associativity).
+  Notation "'let' x : t ':=' a 'in' b" := (eexpr.Let (tx:=t) "Let" a (fun x => b))
+    (in custom quartz_eexpr at level 200, x name, t constr at level 200, a custom quartz_expr at level 200, b custom quartz_eexpr at level 200, right associativity).
+  Notation "'let' x '<-' a 'in' b" := (eexpr.Bind "Bind" a (fun x => b))
+    (in custom quartz_eexpr at level 200, x name, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200, right associativity).
+  Notation "'let' x : t '<-' a 'in' b" := (eexpr.Bind (tx := t) "Bind" a (fun x => b))
+    (in custom quartz_eexpr at level 200, x name, t constr at level 200, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200, right associativity).
+  Notation "'if' cond 'then' a 'else' b" := (eexpr.If cond a b)
+    (in custom quartz_eexpr at level 200, cond custom quartz_expr at level 200, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200).
+  Notation "'match' cond 'with' | 'left' l '=>' a | 'right' r '=>' b 'end'" := (eexpr.Case cond (fun l => a) (fun r => b))
+    (in custom quartz_eexpr at level 200, cond custom quartz_expr at level 200, l name, a custom quartz_eexpr at level 200, r name, b custom quartz_eexpr at level 200).
+  Notation "s '..' f '=' v" := (eexpr.Upd (C:=ltac2:(let (c, _) := typeWithHole.reify_field (pretype f) in exact $c)) expr.tt s v)
+    (in custom quartz_eexpr at level 200, f global, s custom quartz_expr at level 0, v custom quartz_expr at level 200).
+  Notation "s '[' i ']' '=' v" :=
+    (eexpr.Upd (C:=typeWithHole.Array _ typeWithHole.HOLE _) (expr.Binop binop.MkPair i expr.tt) s v)
+    (in custom quartz_eexpr at level 200, s custom quartz_expr at level 0, i custom quartz_expr at level 200, v custom quartz_expr at level 200).
+  Notation "s .[ C , i ] '=' v" := (eexpr.Upd (C:=C) i s v)
+    (in custom quartz_eexpr at level 200, s custom quartz_expr at level 0, C constr at level 0, i custom quartz_expr at level 200, v custom quartz_expr at level 200).
 End eexpr.
 Notation eexpr := eexpr.eexpr (only parsing).
 
@@ -431,7 +483,7 @@ Module fn.
     | eexpr.Let x e C => eexpr.Let x (expr_map_fn e) (fun v => @eexpr_map_fn _ (C v))
     | eexpr.Bind x e C => eexpr.Bind x (@eexpr_map_fn _ e) (fun v => @eexpr_map_fn _ (C v))
     | If e a b => If (expr_map_fn e) (@eexpr_map_fn _ a) (@eexpr_map_fn _ b)
-    | MatchEither e a b => MatchEither (expr_map_fn e) (fun l => @eexpr_map_fn _ (a l)) (fun r => @eexpr_map_fn _ (b r))
+    | Case e a b => Case (expr_map_fn e) (fun l => @eexpr_map_fn _ (a l)) (fun r => @eexpr_map_fn _ (b r))
     | Upd i s v => Upd (@expr_map_fn _ i) (@expr_map_fn _ s) (@expr_map_fn _ v)
     end.
   End WithF.
@@ -439,64 +491,44 @@ Module fn.
   Fixpoint interp {a b} (f : fn type.interp a b) {struct f} : type.interp a -> type.interp b :=
      fun v => eexpr.interp (eexpr_map_fn (@interp) (f.(body) v)).
 
-  Ltac2 let_lift_fns e := let_lift_constants (fun c i => 
+  Ltac2 let_lift_fns e := let_lift_constants (fun c i =>
     lazy_match! Constr.type (UConstr.make (UConstr.Constant c i)) with
     | context[@fn.fn] => true
     | _ => false
     end) e.
 
   Module Private_example_global_fn.
-    Definition succ {var} : fn var (Bits 8) (Bits 8) := Fn (fun x =>
-      Binop binop.Add (Var x) (Const (t:=Bits 8) (Zmod.of_Z _ 1))).
-
-    Definition pred {var} : fn var (Bits 8) (Bits 8) := Fn (fun y =>
-      eexpr.Let "_u" (Call succ (Unop (unop.UnsignedResize) (Var y))) (fun _u =>
-      Binop binop.Add (Var y) (Const (t:=Bits 8) (Zmod.of_Z _ (-1))))).
-
-    Definition cycle {var} := Fn (var:=var) (fun z =>
-      eexpr.Let "r" (Call pred (Call succ (Var z))) (fun r =>
-      Var r)).
-
+    Definition succ {var} : fn var (Bits 8) (Bits 8) := Fn (fun x => quartz_eexpr:(
+      return ( #x + 8 'd 1 ))).
+    Definition pred {var} : fn var (Bits 8) (Bits 8) := Fn (fun y => quartz_eexpr:(
+      let _u := succ ($(expr.Unop unop.UnsignedResize (expr.Var y)) ) in
+      return ( #y + 8 'd (-1) ))).
+    Definition cycle {var} := Fn (var:=var) (fun z => quartz_eexpr:(
+      let r := pred ( succ ( #z ) ) in return #r)).
     Lemma interp_cycle : interp cycle = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
     Proof.
       cbn [cycle            interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
-      (* (fun v : Bits 8 => interp pred (interp succ v)) *)
+      (* = (fun v : Bits 8 => interp pred (interp succ v)) *)
       cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
       (* = RHS *)
       trivial.
     Qed.
-
     Lemma ok_cycle z : interp cycle z = z.
     Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
-
-    Definition lifted_cycle {var} : fn var _ _ := ltac2:(let e := let_lift_fns 'cycle in exact $e).
-
-    Example let_lift_cycle : @lifted_cycle = @cycle.
-    Proof. cbv beta delta [lifted_cycle]. cbv beta delta [cycle pred succ]. trivial. Qed.
   End Private_example_global_fn.
 
   Module Private_example_global_polyfn. (* polymorphic functions can't be packaged yet *)
-    Definition succ {var} : fn var (Bits 8) (Bits 8) := Fn (fun x =>
-      Binop binop.Add (Var x) (Const (t:=Bits 8) (Zmod.of_Z _ 1))).
-
-    Definition pred {var} {n} : fn var (Bits n) (Bits n) := Fn (fun y =>
-      eexpr.Let "_u" (Call succ (Unop (unop.UnsignedResize) (Var y))) (fun _u =>
-      Binop binop.Add (Var y) (Const (t:=Bits n) (Zmod.of_Z _ (-1))))).
-
-    Definition cycle {var} := Fn (var:=var) (fun z =>
-      eexpr.Let "r" (Call (pred(n:=8)) (Call succ (Var z))) (fun r =>
-      Var r)).
-
+    Definition succ {var} : fn var (Bits 8) (Bits 8) := Fn (fun x => quartz_eexpr:(
+      return ( #x + 8 'd 1 ))).
+    Definition pred {var} {n} : fn var (Bits n) (Bits n) := Fn (fun y => quartz_eexpr:(
+      let _u := succ ($(expr.Unop unop.UnsignedResize (expr.Var y)) ) in
+      return ( #y + _ 'd (-1) ))).
+    Definition cycle {var} := Fn (var:=var) (fun z => quartz_eexpr:(
+      let r := pred ( succ ( #z ) ) in return #r)).
     Lemma interp_cycle : interp cycle = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
     Proof. cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp]. trivial. Qed.
-
     Lemma ok_cycle z : interp cycle z = z.
     Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
-
-    Definition lifted_cycle {var} : fn var _ _ := ltac2:(let e := let_lift_fns 'cycle in exact $e).
-
-    Example let_lift_cycle : @lifted_cycle = @cycle.
-    Proof. cbv beta delta [lifted_cycle]. cbv beta delta [cycle pred succ]. trivial. Qed.
   End Private_example_global_polyfn.
 End fn.
 
@@ -507,14 +539,14 @@ Module fns. (* deeply embedded environments of functions *)
     Context {fn : type -> type -> Type}.
     Inductive fns {a b} :=
     | Let {a b} (func_name_hint arg_name_hint : string) (f : var a -> eexpr var fn b) (_ : fn a b -> fns)
-    | Ret (arg_name_hint : string) (_ : var a -> eexpr var fn b).
+    | Ret (func_name_hint arg_name_hint : string) (_ : var a -> eexpr var fn b).
   End WithSubstitutionType.
   Arguments fns : clear implicits.
 
   Fixpoint interp {a b} (fs : fns type.interp type.interpfn a b) : a -> b :=
     match fs with
     | Let _ _ f C => let f := fun a => eexpr.interp (f a) in interp (C f)
-    | Ret _ f => fun a => eexpr.interp (f a)
+    | Ret _ _ f => fun a => eexpr.interp (f a)
     end.
 
     Import Printf.
@@ -531,7 +563,6 @@ Module fns. (* deeply embedded environments of functions *)
     else rdelta x' end.
 
   Ltac2 package_global_fns var fn e :=
-    let tODO := constr:("tODO"%string) in
     let tga := lazy_match! Constr.type e with forall var, fn.fn var ?a ?b => a end in
     let tgb := lazy_match! Constr.type e with forall var, fn.fn var ?a ?b => b end in
     let e := rdelta e in
@@ -545,45 +576,45 @@ Module fns. (* deeply embedded environments of functions *)
         match UConstr.kind e with
         | UConstr.Lambda bv e =>
           let e := UConstr.substnl [a] 0 e in
-          printf "c %t" c;
           let lm := UConstr.make (UConstr.Lambda bv (UConstr.make (UConstr.Rel 2))) in
           let c := UConstr.substnl [lm] 0 (UConstr.liftn 1 2 c) in
-          printf "c' %t" c;
           UConstr.make (UConstr.LetIn bf e (app_lets c a))
-        | _ => 
-          printf "OTHERLET %t" e;
+        | _ =>
           UConstr.make (UConstr.LetIn bf e (app_lets c a))
         end
-      | _ => printf "OTHER %t" e; e
+      | _ => printf "UNRECOGNIZED %t" e; e
     end in
     let e := fn.let_lift_fns e in
-    printf "%t" e; printf "==>";
     let e := app_lets e var in
-    printf "%t" e;
     let rec replace_fn (e : constr) :=
       if Constr.equal e oldfn
       then fn else
       UConstr.map replace_fn e in
+    let binder_name (b : binder) := match Binder.name b with
+      | Some id => constr_string_of_ident id | None => constr:(""%string) end in
+    let lambda_name (body_constr : constr) := match UConstr.kind body_constr with
+      | UConstr.Lambda lb _ => binder_name lb | _ => constr:(""%string) end in
     let rec shallow_reify (e : constr) :=
       match UConstr.kind e with
       | UConstr.LetIn b body c =>
-        match Constr.decompose_app_list body with 
+        match Constr.decompose_app_list body with
         | (f, [var'; ta; t; body]) =>
           if Bool.neg (Constr.equal f constr:(@fn.Fn)) then e else
           if Bool.neg (Constr.equal var' var) then e else
           let bt := UConstr.make (UConstr.App fn [|ta;t|]) in
           let b := Constr.Binder.unsafe_make (Binder.name b) (Binder.relevance b) bt in
           let c := UConstr.make (UConstr.Lambda b (shallow_reify c)) in
-          UConstr.make (UConstr.App fnLet [|ta; t; tODO; tODO; replace_fn body; c|])
+          UConstr.make (UConstr.App fnLet [|ta; t; binder_name b; lambda_name body; replace_fn body; c|])
         | _ => e
         end
       | _ =>
-        match Constr.decompose_app_list e with 
+        match Constr.decompose_app_list e with
         | (f, [var'; ta; t; body]) =>
            if Bool.neg (Constr.equal f constr:(@fn.Fn)) then e else
            if Bool.neg (Constr.equal var' var) then e else
-           UConstr.make (UConstr.App fnRet [|tODO; replace_fn body|])
-        | _ => printf "OTHER %t" e; e
+           let cycle := constr:("cycle"%string) in (* TODO *)
+           UConstr.make (UConstr.App fnRet [|cycle; lambda_name body; replace_fn body|])
+        | _ => printf "UNRECOGNIZED %t" e; e
         end
     end in
     shallow_reify e.
@@ -597,3 +628,465 @@ Module fns. (* deeply embedded environments of functions *)
   End Private_example_wholeprogramdef.
 End fns.
 Local Notation fns := fns.fns (only parsing).
+
+From Stdlib Require Import DecimalString List.
+
+Module sv.
+  Local Open Scope bool_scope. Local Open Scope string_scope.
+  Definition var (t : type) := string.
+  Definition fn (a b : type) := string.
+
+  Definition pp_Z (n : Z) : string := NilZero.string_of_int (Z.to_int n).
+  Definition pp_nat (n : nat) : string := NilZero.string_of_uint (Nat.to_uint n).
+  Definition LF := "
+".
+
+  Fixpoint pp_type (t : type) : string :=
+    match t with
+    | type.Unit => "unit"
+    | type.Bool => "bit"
+    | type.Bits sz => "bit["++pp_Z (sz - 1)++":0]"
+    | type.Pair a b => "Pair#("++pp_type a++", "++pp_type b++")::t"
+    | type.Either a b => "Either#("++pp_type a++", "++pp_type b++")::t"
+    | type.Struct name _ => name
+    | type.Array t sz => pp_type t++"["++pp_nat sz++"-1:0]"
+    end.
+
+  Definition pp_struct nts :=
+    "struct packed { "++ fold_right (fun '(n, t') acc => pp_type t'++" "++n++"; "++acc) "" nts++ "}".
+
+  Definition pp_typedef name nts := "typedef "++pp_struct nts++" "++name++";"++LF.
+
+  Fixpoint pp_typedefs (ts : list type) : string :=
+    match ts with
+    | nil => ""
+    | type.Struct n nts :: ts => pp_typedef n nts ++ pp_typedefs ts
+    | _ :: ts => pp_typedefs ts
+    end.
+
+  Fixpoint pp_const {t : type} : type.interp t -> string :=
+    match t return type.interp t -> string with
+    | type.Unit => fun b => "tt"
+    | type.Bool => fun b => if b then "1'b1" else "1'b0"
+    | type.Bits sz => fun v => pp_Z sz++"'d"++pp_Z (Zmod.unsigned v)
+    | type.Pair a b => fun p =>
+        "Pair#("++pp_type a++", "++pp_type b++")::mk("++
+        @pp_const a (fst p)++", "++@pp_const b (snd p)++")"
+    | type.Either a b => fun e =>
+        match e with
+        | inl v => "Either#("++pp_type a++", "++pp_type b++")::left("++@pp_const a v++")"
+        | inr v => "Either#("++pp_type a++", "++pp_type b++")::right("++@pp_const b v++")"
+        end
+    | type.Struct _ nts =>
+        let fix pp_struct_val (fs : list (string * type))
+          : fold_right (fun nt T => type.interp (snd nt) * T)%type unit fs -> string :=
+          match fs return fold_right (fun nt T => type.interp (snd nt) * T)%type unit fs -> string with
+          | nil => fun _ => ""
+          | cons (n, t') rest => fun v =>
+              let val_str := @pp_const t' (fst v) in
+              let rest_str := pp_struct_val rest (snd v) in
+              "."++n++"("++val_str++")" ++
+              (if match rest with nil => true | _ => false end then "" else ", ") ++
+              rest_str
+          end
+        in fun s => "'{ "++pp_struct_val nts s++" }"
+    | type.Array t' sz =>
+        let fix pp_vec {n} (v : Vector.t (type.interp t') n) : string :=
+          match v in Vector.t _ n return string with
+          | Vector.nil _ => ""
+          | Vector.cons _ hd 0 tl => @pp_const t' hd
+          | Vector.cons _ hd (S n') tl => @pp_const t' hd++", "++pp_vec tl
+          end
+        in fun v => "'{"++pp_vec v++"}"
+    end.
+
+  Fixpoint pp_hole_upd (C : typeWithHole) (base : string) (idx : string) : string :=
+    match C with
+    | typeWithHole.HOLE => base
+    | typeWithHole.PairL t1 _ => pp_hole_upd t1 (base ++ ".fst") idx
+    | typeWithHole.PairR _ t2 => pp_hole_upd t2 (base ++ ".snd") idx
+    | typeWithHole.Struct _ _ n t _ => pp_hole_upd t (base ++ "." ++ n) idx
+    | typeWithHole.Array _ t _ => pp_hole_upd t (base ++ "[" ++ idx ++ ".fst]") (idx ++ ".snd")
+    end.
+
+  Fixpoint pp_hole_get (t_hole : type) (C : typeWithHole) (base : string) (idx : string) : string :=
+    match C with
+    | typeWithHole.HOLE => base
+    | typeWithHole.PairL t1 t2 =>
+        let T1 := typeWithHole.plug t1 t_hole in
+        pp_hole_get t_hole t1 ("Pair#(" ++ pp_type T1 ++ ", " ++ pp_type t2 ++ ")::fst(" ++ base ++ ")") idx
+    | typeWithHole.PairR t1 t2 =>
+        let T2 := typeWithHole.plug t2 t_hole in
+        pp_hole_get t_hole t2 ("Pair#(" ++ pp_type t1 ++ ", " ++ pp_type T2 ++ ")::snd(" ++ base ++ ")") idx
+    | typeWithHole.Struct _ _ n t _ =>
+        pp_hole_get t_hole t (base ++ "." ++ n) idx
+    | typeWithHole.Array _ t _ =>
+        pp_hole_get t_hole t (base ++ "[" ++ idx ++ ".fst]") (idx ++ ".snd")
+    end.
+
+  Definition pp_unop {t1 t2} (op : unop t1 t2) (e1_str : string) : string :=
+    match op with
+    | @unop.IsZero n => "("++e1_str++" == 0)"
+    | @unop.Not n => "(~"++e1_str++")"
+    | @unop.Opp n => "(-"++e1_str++")"
+    | @unop.UnsignedResize n m => pp_Z m ++ "'($unsigned("++e1_str++"))"
+    | @unop.SignedResize n m => pp_Z m ++ "'($signed("++e1_str++"))"
+    | @unop.Left l r => "Either#("++pp_type l++", "++pp_type r++")::left("++e1_str++")"
+    | @unop.Right l r => "Either#("++pp_type l++", "++pp_type r++")::right("++e1_str++")"
+    end.
+
+  Definition pp_binop {t1 t2 t3} (op : binop t1 t2 t3) (e1_str e2_str : string) : string :=
+    match op with
+    | @binop.Add n => "("++e1_str++" + "++e2_str++")"
+    | @binop.And n => "("++e1_str++" & "++e2_str++")"
+    | @binop.Or n => "("++e1_str++" | "++e2_str++")"
+    | @binop.Slu n m => "("++e1_str++" << "++e2_str++")"
+    | @binop.Sru n m => "("++e1_str++" >> "++e2_str++")"
+    | @binop.Srs n m => "($signed("++e1_str++") >>> "++e2_str++")"
+    | @binop.EqBits n => "("++e1_str++" == "++e2_str++")"
+    | @binop.Compare signed c n =>
+        let op_str := match c with
+          | binop.cLt => "<" | binop.cGt => ">"
+          | binop.cLe => "<=" | binop.cGe => ">="
+        end in
+        let e1_s := if signed then "$signed("++e1_str++")" else e1_str in
+        let e2_s := if signed then "$signed("++e2_str++")" else e2_str in
+        "("++e1_s++" "++op_str++" "++e2_s++")"
+    | @binop.MkPair a b => "Pair#("++pp_type a++", "++pp_type b++")::mk("++e1_str++", "++e2_str++")"
+    end.
+
+  Fixpoint pp_expr {t} (e : expr.expr var fn t) : string :=
+    match e with
+    | expr.Const c => pp_const c
+    | expr.Var x => x
+    | @expr.Get _ _ _ C r i => pp_hole_get t C (pp_expr r) (pp_expr i)
+    | expr.Unop op e1 => pp_unop op (pp_expr e1)
+    | expr.Binop op e1 e2 => pp_binop op (pp_expr e1) (pp_expr e2)
+    | expr.If cond a b => "("++pp_expr cond++" ? "++pp_expr a++" : "++pp_expr b++")"
+    | expr.Call f e1 => f++"("++pp_expr e1++")"
+    end.
+
+    Fixpoint pp_eexpr {t} (ind : string) (e : eexpr.eexpr var fn t) (out_var : string) (id : nat) : string * nat :=
+    match e with
+    | @eexpr.Ret _ _ _ exp => (ind ++ out_var ++ " = " ++ pp_expr exp ++ ";", id)
+    | @eexpr.Let _ _ name_hint tx a _ aC =>
+        let vname := name_hint ++ "_" ++ pp_nat id in
+        let stmt1 := ind ++ pp_type tx ++ " " ++ vname ++ " = " ++ pp_expr a ++ ";" in
+        let '(stmt2, id') := pp_eexpr ind (aC vname) out_var (S id) in
+        (stmt1 ++ ""++LF ++ stmt2, id')
+    | @eexpr.Bind _ _ name_hint tx a _ aC =>
+        let vname := name_hint ++ "_" ++ pp_nat id in
+        let stmt_decl := ind ++ "begin " ++ pp_type tx ++ " " ++ vname ++ ";" in
+        let '(stmt1, id1) := pp_eexpr ind a vname (S id) in
+        let '(stmt2, id2) := pp_eexpr ind (aC vname) out_var id1 in
+        (stmt_decl ++ ""++LF ++ stmt1 ++ ""++LF ++ stmt2 ++ " end", id2)
+    | @eexpr.If _ _ _ cond a b =>
+        let ind_nested := ind ++ "  " in
+        let '(stmt_a, id1) := pp_eexpr ind_nested a out_var id in
+        let '(stmt_b, id2) := pp_eexpr ind_nested b out_var id1 in
+        (ind ++ "if (" ++ pp_expr cond ++ ") begin"++LF ++
+         stmt_a ++ ""++LF ++
+         ind ++ "end else begin"++LF ++
+         stmt_b ++ ""++LF ++
+         ind ++ "end", id2)
+    | @eexpr.Case _ _ l_t r_t cond _ l_branch r_branch =>
+        let l_var := "left_" ++ pp_nat id in
+        let r_var := "right_" ++ pp_nat id in
+        let ind_case := ind ++ "  " in
+        let ind_nested := ind_case ++ "  " in
+        let '(stmt_l, id1) := pp_eexpr ind_nested (l_branch l_var) out_var (S id) in
+        let '(stmt_r, id2) := pp_eexpr ind_nested (r_branch r_var) out_var id1 in
+        (ind ++ "case (" ++ pp_expr cond ++ ") matches"++LF ++
+         ind_case ++ "tagged left ." ++ l_var ++ " : begin"++LF ++
+         stmt_l ++ ""++LF ++
+         ind_case ++ "end"++LF ++
+         ind_case ++ "tagged right ." ++ r_var ++ " : begin"++LF ++
+         stmt_r ++ ""++LF ++
+         ind_case ++ "end"++LF ++
+         ind ++ "endcase", id2)
+    | @eexpr.Upd _ _ C i _ es v =>
+        (ind ++ out_var ++ " = " ++ pp_expr es ++ ";"++LF ++ ind ++
+         pp_hole_upd C out_var (pp_expr i) ++ " = " ++ pp_expr v ++ ";", id)
+    end.
+
+  Definition pp_fn {a b} (fname argname : string) (fn_body : var a -> eexpr.eexpr var fn b) : string :=
+    "function automatic " ++ pp_type b ++ " " ++ fname ++ " ("++LF++
+    "  input " ++ pp_type a ++ " " ++ argname ++ ");"++LF ++
+      fst (pp_eexpr "  " (fn_body argname) fname 0)++LF++
+    "endfunction"++LF.
+
+  Fixpoint pp_fns {a b} (fs : fns.fns var fn a b) : string :=
+    match fs with
+    | fns.Let fname argname fn_body C =>
+        pp_fn fname argname fn_body ++ ""++LF ++ pp_fns (C fname)
+    | fns.Ret fname argname fn_body => pp_fn fname argname fn_body
+    end.
+
+  Require Import List.
+
+  Definition type_set_add (t : type) (acc : list type) : list type :=
+    if existsb (type.type_beq t) acc then acc else t :: acc.
+
+  Fixpoint typeannots_type (t : type) (acc : list type) : list type :=
+    let acc' := type_set_add t acc in
+    match t with
+    | type.Pair a b | type.Either a b => typeannots_type b (typeannots_type a acc')
+    | type.Array t' _ => typeannots_type t' acc'
+    | type.Struct _ nts => fold_right (fun nt a => typeannots_type (snd nt) a) acc' nts
+    | _ => acc'
+    end.
+
+  Fixpoint typeannots_expr {t} (e : expr.expr var fn t) (acc : list type) : list type :=
+    match e with
+    | @expr.Const _ _ _ c => typeannots_type t acc
+    | expr.Var x => acc
+    | @expr.Get _ _ _ C r i => typeannots_type (typeWithHole.plug C t) (typeannots_expr i (typeannots_expr r acc))
+    | @expr.Unop _ _ _ _ op e1 =>
+        let acc := match op with
+                   | @unop.Left l r | @unop.Right l r => typeannots_type r (typeannots_type l acc)
+                   | _ => acc
+                   end in
+        typeannots_expr e1 acc
+    | @expr.Binop _ _ _ _ _ op e1 e2 =>
+        let acc := match op with
+                   | @binop.MkPair a b => typeannots_type b (typeannots_type a acc)
+                   | _ => acc
+                   end in
+        typeannots_expr e2 (typeannots_expr e1 acc)
+    | expr.If cond a b => typeannots_expr b (typeannots_expr a (typeannots_expr cond acc))
+    | @expr.Call _ _ _ _ _ e1 => typeannots_expr e1 acc
+    end.
+
+  Fixpoint typeannots_eexpr {t} (e : eexpr.eexpr var fn t) (acc : list type) : list type :=
+    match e with
+    | @eexpr.Ret _ _ _ exp => typeannots_expr exp acc
+    | @eexpr.Let _ _ _ tx a _ aC =>
+        typeannots_eexpr (aC "") (typeannots_expr a (typeannots_type tx acc))
+    | @eexpr.Bind _ _ _ tx a _ aC =>
+        typeannots_eexpr (aC "") (typeannots_eexpr a (typeannots_type tx acc))
+    | @eexpr.If _ _ _ cond a b =>
+        typeannots_eexpr b (typeannots_eexpr a (typeannots_expr cond acc))
+    | @eexpr.Case _ _ _ _ cond _ l r =>
+        typeannots_eexpr (r "") (typeannots_eexpr (l "") (typeannots_expr cond acc))
+    | @eexpr.Upd _ _ _ i _ es v =>
+        typeannots_expr v (typeannots_expr es (typeannots_expr i acc))
+    end.
+
+  Fixpoint typeannots_fns {a b} (fs : fns.fns var fn a b) (acc : list type) : list type :=
+    let acc := typeannots_type b (typeannots_type a acc) in
+    match fs with
+    | @fns.Let _ _ _ _ a' b' _ _ fn_body C =>
+        let acc := typeannots_type b' (typeannots_type a' acc) in
+        typeannots_fns (C "") (typeannots_eexpr (fn_body "") acc)
+    | fns.Ret _ _ fn_body =>
+        typeannots_eexpr (fn_body "") acc
+    end.
+
+  Fixpoint is_subterm (s t : type) : bool :=
+    type.type_beq s t ||
+    match t with
+    | type.Pair a b | type.Either a b => is_subterm s a || is_subterm s b
+    | type.Struct _ nts => fold_right (fun nt b => b || is_subterm s (snd nt)) false nts
+    | type.Array t _ => is_subterm s t
+    | _ => false
+    end.
+
+  Fixpoint insert_type (t : type) (l : list type) : list type :=
+    match l with
+    | nil => t :: nil
+    | h :: tail =>
+        if is_subterm t h
+        then t :: h :: tail
+        else h :: insert_type t tail
+    end.
+
+  Definition topsort := fold_right insert_type [].
+
+  Local Open Scope string_scope.
+
+  Definition pp {a b} fns :="// Generated from Rocq by Quartz (experimental prototype version)
+typedef enum { tt } unit;
+
+class Pair #(parameter type A, parameter type B);
+  typedef struct { A fst; B snd; } t;
+  static function A fst (t p); return p.fst; endfunction
+  static function B snd (t p); return p.snd; endfunction
+  static function t mk (A a, B b); return t'{a, b}; endfunction
+endclass
+
+class Either #(parameter type A, parameter type B);
+  typedef union tagged { A left; B right; } t;
+  static function t left(A a); return tagged left a; endfunction
+  static function t right(B b); return tagged right b; endfunction
+endclass"++LF++LF++
+    pp_typedefs (topsort (typeannots_fns fns [])) ++ ""++LF ++ @pp_fns a b fns.
+End sv.
+
+Section Test.
+  Import (notations) eexpr expr. Local Open Scope string_scope.
+
+  (* See THIS EXAMPLE ABOVE for how to structure your code *)
+  Compute sv.pp fns.Private_example_wholeprogramdef.packaged_cycle.
+
+  (* The tests below are not recommendations, they are just here to exercise printing and parsing *)
+  Let make_tuple {var fn} : var (Bits 32) -> eexpr var fn _ :=
+    fun v => quartz_eexpr:( return ( #v , #v , ! #v ) ).
+  Compute sv.pp (fns.Ret "make_tuple" "v" make_tuple).
+
+  Let increment_element {var fn} : var (Array (Bits 32) 4) -> eexpr var fn _ :=
+    fun arr => quartz_eexpr:(
+      let i := const (Zmod.of_Z _ 1 : Bits 2) in
+      let cur_val := #arr[#i] in
+      let next_val := #cur_val + const (Zmod.of_Z _ 1 : Bits _) in
+      let arr_new <- #arr[#i] = #next_val in
+      return #arr_new).
+  Compute sv.pp (fns.Ret "increment_element" "arr" increment_element).
+
+  Record Pixel := { valid : bool; red : bits 8; green : bits 8; blue : bits 8 }.
+
+  Let invert_red {var fn} : var (type.reify'' Pixel) -> eexpr var fn _ :=
+    fun p => quartz_eexpr:(
+      let cur_red := #p..red in
+      let inv_red := ~ #cur_red in
+      let p_new <- #p..red = #inv_red in
+      return #p_new).
+  Compute sv.pp (fns.Ret "invert_red" "p" invert_red).
+
+  Let hole_red := @typeWithHole.Struct "Pixel" [("valid", type.Bool)] "red" typeWithHole.HOLE [("green", type.Bits 8); ("blue", type.Bits 8)] (fun _ => eq_refl).
+
+  Let invert_red2 {var fn} : var _ -> eexpr var fn _ :=
+    fun p => quartz_eexpr:(
+      let cur_red := #p .[ hole_red , $expr.tt ] in
+      let inv_red : Bits 8 := ~ #cur_red in
+      let p_new <- #p .[ hole_red , $expr.tt ] = #inv_red in
+      return #p_new).
+  Compute sv.pp (fns.Ret "invert_red2" "invert_red2" invert_red2).
+
+  Record OpsRecord := { val_a : bits 32; val_b : bits 32 }.
+
+  Let all_ops_test {var fn} : var (type.reify'' OpsRecord) -> eexpr var fn type.Bool :=
+    fun p => quartz_eexpr:(
+      let a := #p .. val_a in
+      let b := #p .. val_b in
+      let un_opp := - #a in
+      let un_not := ~ #a in
+      let is_z   := ! #a in
+      let un_ur : Bits 16 := $(expr.Unop unop.UnsignedResize (expr.Var a)) in
+      let un_sr : Bits 16 := $(expr.Unop unop.SignedResize (expr.Var a)) in
+      let b_add := #a + #b in
+      let b_and := #a & #b in
+      let b_or  := #a | #b in
+      let b_slu := #a << #un_ur in
+      let b_sru := #a >> #un_ur in
+      let b_srs := #a .>> #un_ur in
+      let b_eq := #a == #b in
+      let b_lt := #a < #b in
+      let b_gt := #a > #b in
+      let b_le := #a <= #b in
+      let b_ge := #a >= #b in
+      let b_lts := #a .< #b in
+      let b_gts := #a .> #b in
+      let b_les := #a .<= #b in
+      let b_ges := #a .>= #b in
+      let b_mkp := (#a, #un_ur) in
+      return #is_z).
+  Compute sv.pp (fns.Ret "all_ops_test" "p" all_ops_test).
+
+  Let wrap_value {var fn} : var (Bits 32) -> eexpr var fn _ :=
+    fun v => quartz_eexpr:(
+      let is_z := ! #v in
+      if #is_z
+      then return left #v
+      else return right (const (Zmod.of_Z _ 255 : Bits 8))).
+  Compute sv.pp (fns.Ret "wrap_value" "v" wrap_value).
+
+  Let wrap_value2 {var fn} : var (Bits 32) -> eexpr var fn _ :=
+    fun v => quartz_eexpr:(
+      return if ! #v
+             then left #v
+             else right (const (Zmod.of_Z _ 255 : Bits 8))).
+  Compute sv.pp (fns.Ret "wrap_value2" "v" wrap_value2).
+
+  Let rotl3 {var fn} : var (Bits 32) -> eexpr var fn _ :=
+    fun v => quartz_eexpr:(
+      let sl := #v << 32 'd 3 in
+      let sr := #v >> 32 'd 29 in
+      return ( #sl | #sr )
+    ).
+  Compute sv.pp (fns.Ret "rotl3" "v" rotl3).
+
+  Let safe_val {var fn} : var (Bits 32) -> eexpr var fn _ :=
+    fun v => quartz_eexpr:(
+      let is_z := ! #v in
+      if #is_z then
+        return ( 32'd 1)
+      else
+        return #v
+   ).
+  Compute sv.pp (fns.Ret "safe_val" "v" safe_val).
+End Test.
+
+Module InterfaceExample.
+Module Fifo.
+Record Fifo {var fn} (t_state t_data : type) := {
+  cap      : var t_state -> eexpr var fn (type.Bits 32);
+  length   : var t_state -> eexpr var fn (type.Bits 32);
+  full     : var t_state -> eexpr var fn type.Bool;
+  empty    : var t_state -> eexpr var fn type.Bool;
+  enq      : var (type.Pair t_state t_data) -> eexpr var fn t_state;
+  deq      : var t_state -> eexpr var fn (type.Pair t_state t_data)
+}.
+End Fifo. Notation Fifo := Fifo.Fifo (only parsing).
+
+Module fifo1. Section fifo1.
+  Context (t : type).
+
+  Record state := { valid : bool; payload : t; }.
+
+  Definition State := type.reify'' state.
+
+  Import (notations) eexpr expr. Local Open Scope string_scope.
+
+  Let cap {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
+    return 32 'd 1).
+
+  Let length {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
+    return if #st..valid then 32 'd 1 else 32 'd 0).
+
+  Let full {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
+    return #st..valid).
+
+  Let empty {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
+    return if #st..valid then $expr.false else $expr.true).
+
+  Let enq {var fn} (p : var (type.Pair State t)) : eexpr var fn _ := quartz_eexpr:(
+      let st := #p .1 in let d  := #p .2 in
+    let st <- #st..valid = $expr.true in
+    let st <- #st..payload = #d in
+    return #st).
+
+  Let deq {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
+    let out_d := #st..payload in
+    let st_new <- #st..valid = $expr.false in
+    return (#st_new, #out_d)).
+
+  Definition impl {var fn}  : @Fifo var fn State t := {|
+    Fifo.cap    := cap;
+    Fifo.length := length;
+    Fifo.full   := full;
+    Fifo.empty  := empty;
+    Fifo.enq    := enq;
+    Fifo.deq    := deq
+  |}.
+
+  Coercion rep (v : state) : type.reify'' state :=
+    ltac2:(let t := struct.rep &v in exact $t).
+
+  Lemma not_full_and_empty st : eexpr.interp (empty (rep st)) <> eexpr.interp (full (rep st)).
+  Proof.
+    cbn. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
+    (* (if valid st then false else true) <> valid st *) destruct (valid st); congruence.
+  Qed.
+End fifo1. End fifo1.
+
+End InterfaceExample.
