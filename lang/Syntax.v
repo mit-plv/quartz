@@ -730,7 +730,7 @@ Module sv.
     | @unop.Not n => "(~"++e1_str++")"
     | @unop.Opp n => "(-"++e1_str++")"
     | @unop.UnsignedResize n m => pp_Z m ++ "'($unsigned("++e1_str++"))"
-    | @unop.SignedResize n m => pp_Z m ++ "'($signed("++e1_str++"))"
+    | @unop.SignedResize n m => "$unsigned(" ++ pp_Z m ++ "'($signed("++e1_str++")))"
     | @unop.Left l r => "Either#("++pp_type l++", "++pp_type r++")::left("++e1_str++")"
     | @unop.Right l r => "Either#("++pp_type l++", "++pp_type r++")::right("++e1_str++")"
     end.
