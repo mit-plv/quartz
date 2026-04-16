@@ -908,14 +908,14 @@ Module sv.
 typedef enum { tt } unit;
 
 class Pair #(parameter type A, parameter type B);
-  typedef struct { A fst; B snd; } t;
+  typedef struct packed { A fst; B snd; } t;
   static function A fst (t p); return p.fst; endfunction
   static function B snd (t p); return p.snd; endfunction
   static function t mk (A a, B b); return t'{a, b}; endfunction
 endclass
 
 class Either #(parameter type A, parameter type B);
-  typedef union tagged { A left; B right; } t;
+  typedef union tagged packed { A left; B right; } t;
   static function t left(A a); return tagged left a; endfunction
   static function t right(B b); return tagged right b; endfunction
 endclass"++LF++LF++
