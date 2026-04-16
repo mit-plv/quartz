@@ -1027,14 +1027,15 @@ Section Test.
 End Test.
 
 Module InterfaceExample.
+Import fn.
 Module Fifo.
-Record Fifo {var fn} (t_state t_data : type) := {
-  cap      : var t_state -> eexpr var fn (type.Bits 32);
-  length   : var t_state -> eexpr var fn (type.Bits 32);
-  full     : var t_state -> eexpr var fn type.Bool;
-  empty    : var t_state -> eexpr var fn type.Bool;
-  enq      : var (type.Pair t_state t_data) -> eexpr var fn t_state;
-  deq      : var t_state -> eexpr var fn (type.Pair t_state t_data)
+Record Fifo {var} (t_state t_data : type) := {
+  cap      : fn var t_state (type.Bits 32);
+  length   : fn var t_state (type.Bits 32);
+  full     : fn var t_state type.Bool;
+  empty    : fn var t_state type.Bool;
+  enq      : fn var (type.Pair t_state t_data) t_state;
+  deq      : fn var t_state (type.Pair t_state t_data)
 }.
 End Fifo. Notation Fifo := Fifo.Fifo (only parsing).
 
@@ -1047,30 +1048,30 @@ Module fifo1. Section fifo1.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let cap {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
-    return 32 'd 1).
+  Let cap {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    return 32 'd 1)).
 
-  Let length {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
-    return if #st..valid then 32 'd 1 else 32 'd 0).
+  Let length {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    return if #st..valid then 32 'd 1 else 32 'd 0)).
 
-  Let full {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
-    return #st..valid).
+  Let full {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    return #st..valid)).
 
-  Let empty {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
-    return if #st..valid then $expr.false else $expr.true).
+  Let empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    return if #st..valid then false else true)).
 
-  Let enq {var fn} (p : var (type.Pair State t)) : eexpr var fn _ := quartz_eexpr:(
+  Let enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
       let st := #p .1 in let d  := #p .2 in
-    let st <- #st..valid = $expr.true in
+    let st <- #st..valid = true in
     let st <- #st..payload = #d in
-    return #st).
+    return #st)).
 
-  Let deq {var fn} (st : var State) : eexpr var fn _ := quartz_eexpr:(
+  Let deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let out_d := #st..payload in
-    let st_new <- #st..valid = $expr.false in
-    return (#st_new, #out_d)).
+    let st_new <- #st..valid = false in
+    return (#st_new, #out_d))).
 
-  Definition impl {var fn}  : @Fifo var fn State t := {|
+  Definition impl {var} : @Fifo var State t := {|
     Fifo.cap    := cap;
     Fifo.length := length;
     Fifo.full   := full;
@@ -1082,7 +1083,8 @@ Module fifo1. Section fifo1.
   Coercion rep (v : state) : type.reify'' state :=
     ltac2:(let t := struct.rep &v in exact $t).
 
-  Lemma not_full_and_empty st : eexpr.interp (empty (rep st)) <> eexpr.interp (full (rep st)).
+  Lemma not_full_and_empty (st : state) :
+    fn.interp empty st <> fn.interp full st.
   Proof.
     cbn. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
     (* (if valid st then false else true) <> valid st *) destruct (valid st); congruence.
