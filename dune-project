@@ -10,7 +10,7 @@
  (synopsis "")
  (depends 
   (coq (>= 9.0))
-  (rocq-stdlib (>= 9.0.0))
+  (rocq-stdlib (>= 9.1.0))
  )
 )
 
