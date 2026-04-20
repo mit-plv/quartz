@@ -94,11 +94,11 @@ End fifo1. End fifo1.
 
 Module Multiplier.
 
-  Record Multiplier {var} {width : Z} {req: Z -> type} (t_state : type) := {
+  Record Multiplier {var} {width : Z} {req: type} (t_state : type) := {
     peek : fn var t_state (type.Bits (width + width));
     full : fn var t_state type.Bool;
     respReady : fn var t_state type.Bool;
-    enq : fn var (type.Pair t_state (req width)) t_state; 
+    enq : fn var (type.Pair t_state req) t_state; 
     deq : fn var t_state t_state; 
     tick : fn var t_state t_state;
   }.
@@ -156,13 +156,35 @@ Module multiplier. Section multiplier.
       return #st 
     else return #st)).
 
-  (* TODO: Boolean and *)
   Let tick {var} := Fn (fun (st: var State) => quartz_eexpr:(
-     if #st..valid && ! #st..finished then
-       return #st 
-     else (* No valid request *)
-       return #st)).
-  ).
+     if #st..valid && not #st..finished then
+       if !#st..op1 || !#st..op2 then (* zero-skip *)
+         let st <- #st..finished = true in 
+         let st <- #st..result = _ 'd 0 in 
+         return #st
+       else if #st..nstep ==  ~ (_ 'd 0) then (* == ones: done *)
+         let st <- #st..finished = true in 
+         let st <- #st..result = _ 'd 0 in 
+         return #st
+       else 
+         let st <- #st..nstep = (#st..nstep + _ 'd 1) in
+         return #st
+    else return #st)).
+
+  Definition impl {var} : @Multiplier var width Req State := {|
+    Multiplier.peek := peek;
+    Multiplier.full := full;
+    Multiplier.respReady := respReady;
+    Multiplier.enq    := enq;
+    Multiplier.deq := deq;
+    Multiplier.tick := tick;
+  |}.
+  Coercion rep (v : state) : type.reify'' state :=
+    ltac2:(let t := struct.rep &v in exact $t).
+  Lemma peek_ok (s : state) : fn.interp peek s = s.(result).
+  Proof. trivial. Qed.
+  Lemma full_ok (s : state) : fn.interp full s = s.(valid).
+  Proof. trivial. Qed.
 
 End multiplier. End multiplier.
 
