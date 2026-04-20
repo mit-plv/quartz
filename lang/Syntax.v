@@ -206,6 +206,8 @@ Module binop.
   | Slu {n m} : binop (Bits n) (Bits m) (Bits n)
   | Sru {n m} : binop (Bits n) (Bits m) (Bits n)
   | Srs {n m} : binop (Bits n) (Bits m) (Bits n)
+  | BAnd : binop Bool Bool Bool
+  | BOr : binop Bool Bool Bool
   | EqBits {n} : binop (Bits n) (Bits n) Bool
   | Compare (signed: bool) (c: compare) {n} : binop (Bits n) (Bits n) Bool
   | MkPair {a b: type} : binop a b (Pair a b).
@@ -218,6 +220,8 @@ Module binop.
     | Slu => fun a b => Zmod.slu a (Zmod.unsigned b)
     | Sru => fun a b => Zmod.sru a (Zmod.unsigned b)
     | Srs => fun a b => Zmod.srs a (Zmod.unsigned b)
+    | BAnd => andb
+    | BOr => orb
     | EqBits => Zmod.eqb
     | Compare signed c => fun a b =>
         match c with cLt => Z.ltb | cGt => Z.gtb | cLe => Z.leb | cGe => Z.geb end
@@ -381,6 +385,8 @@ Module expr.
   Notation "e1 << e2" := (expr.Binop binop.Slu e1 e2) (in custom quartz_expr at level 60, left associativity).
   Notation "e1 >> e2" := (expr.Binop binop.Sru e1 e2) (in custom quartz_expr at level 60, left associativity).
   Notation "e1 .>> e2" := (expr.Binop binop.Srs e1 e2) (in custom quartz_expr at level 60, left associativity).
+  Notation "e1 && e2" := (expr.Binop binop.BAnd e1 e2) (in custom quartz_expr at level 40, left associativity).
+  Notation "e1 || e2" := (expr.Binop binop.BOr e1 e2) (in custom quartz_expr at level 50, left associativity).
 
   Notation "e1 == e2" := (expr.Binop binop.EqBits e1 e2) (in custom quartz_expr at level 70, no associativity).
   Notation "e1 < e2" := (expr.Binop (binop.Compare Datatypes.false binop.cLt) e1 e2) (in custom quartz_expr at level 70, no associativity).
@@ -743,6 +749,8 @@ Module sv.
     | @binop.Slu n m => "("++e1_str++" << "++e2_str++")"
     | @binop.Sru n m => "("++e1_str++" >> "++e2_str++")"
     | @binop.Srs n m => "($signed("++e1_str++") >>> "++e2_str++")"
+    | @binop.BAnd => "("++e1_str++" && "++e2_str++")"
+    | @binop.BOr => "("++e1_str++" || "++e2_str++")"
     | @binop.EqBits n => "("++e1_str++" == "++e2_str++")"
     | @binop.Compare signed c n =>
         let op_str := match c with
@@ -962,12 +970,14 @@ Section Test.
       return #p_new).
   Compute sv.pp (fns.Ret "invert_red2" "invert_red2" invert_red2).
 
-  Record OpsRecord := { val_a : bits 32; val_b : bits 32 }.
+  Record OpsRecord := { val_a : bits 32; val_b : bits 32; bool_a : bool; bool_b : bool }.
 
   Let all_ops_test {var fn} : var (type.reify'' OpsRecord) -> eexpr var fn type.Bool :=
     fun p => quartz_eexpr:(
       let a := #p .. val_a in
       let b := #p .. val_b in
+      let bool_a := #p .. bool_a in
+      let bool_b := #p .. bool_b in
       let un_opp := - #a in
       let un_not := ~ #a in
       let is_z   := ! #a in
@@ -979,6 +989,8 @@ Section Test.
       let b_slu := #a << #un_ur in
       let b_sru := #a >> #un_ur in
       let b_srs := #a .>> #un_ur in
+      let b_band := #bool_a && #bool_b in
+      let b_bor := #bool_a || #bool_b in
       let b_eq := #a == #b in
       let b_lt := #a < #b in
       let b_gt := #a > #b in
@@ -1080,7 +1092,7 @@ Module fifo1. Section fifo1.
     Fifo.deq    := deq
   |}.
 
-  Coercion rep (v : state) : type.reify'' state :=
+  Coercion rep (v : state) : type.reify'' state :
     ltac2:(let t := struct.rep &v in exact $t).
 
   Lemma not_full_and_empty (st : state) :
