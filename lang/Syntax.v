@@ -176,6 +176,7 @@ Module unop.
   Inductive unop : type -> type -> Type :=
   | IsZero {n} : unop (Bits n) Bool
   | Not {n} : unop (Bits n) (Bits n) (* bitwise completement *)
+  | BNot : unop Bool Bool (* bitwise completement *)
   | Opp {n} : unop (Bits n) (Bits n) (* arithmetic negation *)
   | UnsignedResize {n m} : unop (Bits n) (Bits m) (* zero-extend or truncate *)
   | SignedResize {n m} : unop (Bits n) (Bits m) (* sign-extend or truncate *)
@@ -187,6 +188,7 @@ Module unop.
     match op in unop a b return a -> b with
     | IsZero => Zmod.eqb Zmod.zero
     | Not => Zmod.not
+    | BNot => negb
     | Opp => Zmod.opp
     | UnsignedResize => fun v => bits.of_Z _ (Zmod.unsigned v)
     | SignedResize => fun v => bits.of_Z _ (Zmod.signed v)
@@ -371,6 +373,8 @@ Module expr.
   Notation "- e" := (expr.Unop unop.Opp e) (in custom quartz_expr at level 35, right associativity).
   Notation "! e" := (expr.Unop unop.IsZero e) (in custom quartz_expr at level 35, right associativity).
   Notation "~ e" := (expr.Unop unop.Not e) (in custom quartz_expr at level 35, right associativity).
+  Notation "'not' e" := (expr.Unop unop.BNot e) (in custom quartz_expr at level 35, right associativity).
+
   Notation "'left' e" := (expr.Unop unop.Left e) (in custom quartz_expr at level 10, right associativity).
   Notation "'right' e" := (expr.Unop unop.Right e) (in custom quartz_expr at level 10, right associativity).
 
@@ -734,6 +738,7 @@ Module sv.
     match op with
     | @unop.IsZero n => "("++e1_str++" == 0)"
     | @unop.Not n => "(~"++e1_str++")"
+    | @unop.BNot => "(!"++e1_str++")"
     | @unop.Opp n => "(-"++e1_str++")"
     | @unop.UnsignedResize n m => pp_Z m ++ "'($unsigned("++e1_str++"))"
     | @unop.SignedResize n m => "$unsigned(" ++ pp_Z m ++ "'($signed("++e1_str++")))"
@@ -980,6 +985,7 @@ Section Test.
       let bool_b := #p .. bool_b in
       let un_opp := - #a in
       let un_not := ~ #a in
+      let un_bnot := not #bool_a in
       let is_z   := ! #a in
       let un_ur : Bits 16 := $(expr.Unop unop.UnsignedResize (expr.Var a)) in
       let un_sr : Bits 16 := $(expr.Unop unop.SignedResize (expr.Var a)) in
@@ -1092,7 +1098,7 @@ Module fifo1. Section fifo1.
     Fifo.deq    := deq
   |}.
 
-  Coercion rep (v : state) : type.reify'' state :
+  Coercion rep (v : state) : type.reify'' state :=
     ltac2:(let t := struct.rep &v in exact $t).
 
   Lemma not_full_and_empty (st : state) :
