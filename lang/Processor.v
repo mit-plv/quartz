@@ -90,4 +90,80 @@ Module fifo1. Section fifo1.
   Qed.
 End fifo1. End fifo1.
 
+(* Definition WIDTH : Z := 32. *)
+
+Module Multiplier.
+
+  Record Multiplier {var} {width : Z} {req: Z -> type} (t_state : type) := {
+    peek : fn var t_state (type.Bits (width + width));
+    full : fn var t_state type.Bool;
+    respReady : fn var t_state type.Bool;
+    enq : fn var (type.Pair t_state (req width)) t_state; 
+    deq : fn var t_state t_state; 
+    tick : fn var t_state t_state;
+  }.
+  
+End Multiplier. Notation Multiplier:= Multiplier.Multiplier (only parsing).
+
+Module multiplier. Section multiplier.
+  Context (width : Z).
+  Context (logNSteps : Z).
+
+  Record req_t := { input_a : Bits width; input_b : Bits width}.
+  Definition Req := type.reify'' req_t.
+
+  Record state := { 
+    valid : bool; 
+    op1 : Bits width;
+    op2 : Bits width;
+    result : Bits (width + width);
+    nstep : Bits logNSteps;
+    finished : bool
+  }. 
+
+  Definition State := type.reify'' state.
+
+  Import (notations) eexpr expr. Local Open Scope string_scope.
+
+  Let peek {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    let out := #st..result in
+    return (#out))).
+
+  Let full {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    return #st..valid)).
+
+  Let respReady {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    return #st..finished)).
+
+  (* TODO: reification of types in other types. *)
+  Let enq {var} := Fn (fun (p : var (type.Pair State Req)) => quartz_eexpr:(
+    let st := #p .1 in let d  := #p .2 in
+    let is_full := full ( #st ) in                        
+    if #is_full then
+      return #st 
+    else 
+      let st <- #st..valid = true in
+      let st <- #st..op1 = #d..input_a in
+      let st <- #st..op2 = #d..input_b in
+      let st <- #st..finished = false in
+      let st <- #st..nstep = _ 'd 0 in
+      return #st)).
+
+  Let deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    if #st..finished then
+      let st <- #st..valid = false in
+      let st <- #st..finished = false in 
+      return #st 
+    else return #st)).
+
+  (* TODO: Boolean and *)
+  Let tick {var} := Fn (fun (st: var State) => quartz_eexpr:(
+     if #st..valid && ! #st..finished then
+       return #st 
+     else (* No valid request *)
+       return #st)).
+  ).
+
+End multiplier. End multiplier.
+
 End InterfaceExample.
