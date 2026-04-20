@@ -203,6 +203,7 @@ Module binop.
 
   Inductive binop : type -> type -> type -> Type :=
   | Add {n} : binop (Bits n) (Bits n) (Bits n)
+  | Sub {n} : binop (Bits n) (Bits n) (Bits n)
   | And {n} : binop (Bits n) (Bits n) (Bits n)
   | Or {n} : binop (Bits n) (Bits n) (Bits n)
   | Slu {n m} : binop (Bits n) (Bits m) (Bits n)
@@ -218,6 +219,7 @@ Module binop.
   Definition interp {a b c} (op: binop a b c) : a -> b -> c :=
     match op in binop a b c return a -> b -> c with
     | Add => Zmod.add
+    | Sub => Zmod.sub
     | And => Zmod.and
     | Or => Zmod.or
     | Slu => fun a b => Zmod.slu a (Zmod.unsigned b)
@@ -388,6 +390,7 @@ Module expr.
   Notation "e1 * e2" := (expr.Binop binop.And e1 e2) (in custom quartz_expr at level 39, left associativity).
   Notation "e1 & e2" := (expr.Binop binop.And e1 e2) (in custom quartz_expr at level 40, left associativity).
   Notation "e1 + e2" := (expr.Binop binop.Add e1 e2) (in custom quartz_expr at level 50, left associativity).
+  Notation "e1 - e2" := (expr.Binop binop.Add e1 e2) (in custom quartz_expr at level 50, left associativity).
   Notation "e1 | e2" := (expr.Binop binop.Or e1 e2) (in custom quartz_expr at level 50, left associativity).
   Notation "e1 << e2" := (expr.Binop binop.Slu e1 e2) (in custom quartz_expr at level 60, left associativity).
   Notation "e1 >> e2" := (expr.Binop binop.Sru e1 e2) (in custom quartz_expr at level 60, left associativity).
@@ -752,6 +755,7 @@ Module sv.
   Definition pp_binop {t1 t2 t3} (op : binop t1 t2 t3) (e1_str e2_str : string) : string :=
     match op with
     | @binop.Add n => "("++e1_str++" + "++e2_str++")"
+    | @binop.Sub n => "("++e1_str++" - "++e2_str++")"
     | @binop.And n => "("++e1_str++" & "++e2_str++")"
     | @binop.Or n => "("++e1_str++" | "++e2_str++")"
     | @binop.Slu n m => "("++e1_str++" << "++e2_str++")"
@@ -996,6 +1000,7 @@ Section Test.
       let mul1 : Bits 32 := $(expr.Binop binop.Mul (expr.Var a) (expr.Var b)) in 
       let mul2 : Bits 32 := #a * #b in 
       let b_add := #a + #b in
+      let b_sub := #a - #b in
       let b_and := #a & #b in
       let b_or  := #a | #b in
       let b_slu := #a << #un_ur in

@@ -5,7 +5,7 @@ From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof 
 From quartz.lang Require Import Syntax.
 From Stdlib Require Import BinInt Bits.
 From Stdlib Require Import String List.
-From Stdlib Require Vector.
+From Stdlib Require NArith Vector.
 Import ListNotations.
 
 From quartz.lang Require Import ident_to_string let_lift.
@@ -163,8 +163,10 @@ Module multiplier. Section multiplier.
          let st <- #st..result = _ 'd 0 in 
          return #st
        else if #st..nstep ==  ~ (_ 'd 0) then (* == ones: done *)
+         let op1 := #st..op1 in               
+         let op2 := #st..op2 in               
          let st <- #st..finished = true in 
-         let st <- #st..result = _ 'd 0 in 
+         let st <- #st..result = $(expr.Binop binop.Mul (expr.Var op1) (expr.Var op2))  in 
          return #st
        else 
          let st <- #st..nstep = (#st..nstep + _ 'd 1) in
@@ -187,5 +189,153 @@ Module multiplier. Section multiplier.
   Proof. trivial. Qed.
 
 End multiplier. End multiplier.
+
+Module RfScored. Section RfScored.
+Context {var: type -> Type}.
+Context {log_nregs: Z}.
+
+Notation t_idx := (Bits log_nregs).
+  
+Record RfScored (t_state t_data : type) := {
+  acquireLock : fn var (Pair t_state t_idx) t_state;
+  releaseLock : fn var (Pair t_state t_idx) t_state;
+  writeAndRelease : fn var (Pair t_state (type.Pair t_idx t_data)) t_state;
+  read : fn var (Pair t_state t_idx) t_data;
+  isLocked : fn var (Pair t_state t_idx) Bool
+}.
+End RfScored. End RfScored. Notation RfScored := RfScored.RfScored (only parsing).
+
+Module rfScored. Section rfScored.
+  Context {var: type -> Type}.
+  Context {log_nregs: Z}.
+  Context (t_data : type).
+
+  Notation t_idx := (Bits log_nregs).
+
+  Definition nregs : nat := Z.to_nat (2^log_nregs).
+  Notation state := (Vector.t (bool * t_data) nregs).
+  Definition State := type.reify'' state.
+
+  Import (notations) eexpr expr. Local Open Scope string_scope.
+
+  (* TODO: let '(_,_) syntax *)
+  Let isLocked {var} : fn _ _ Bool := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+    let st := #p .1 in let idx := #p .2 in 
+    return #st[#idx] .1)).
+
+  Let read {var} : fn _ _ t_data := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+    let st := #p .1 in let idx := #p .2 in 
+    return #st[#idx] .2)).
+
+  (* TODO: #st[#idx].1 = true syntax *)
+  Let acquireLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+    let st := #p .1 in let idx := #p .2 in 
+    let data := #st[#idx] .2 in                        
+    let st <- #st[#idx] = (true, #data) in
+    return #st)).
+
+  Let releaseLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+    let st := #p .1 in let idx := #p .2 in 
+    let data := #st[#idx] .2 in                        
+    let st <- #st[#idx] = (false, #data) in
+    return #st)).
+
+  Let writeAndRelease {var} := Fn (fun (p : var (Pair State (type.Pair t_idx t_data))) => quartz_eexpr:(
+    let st := #p .1 in let idx := #p .2 .1 in let data := #p .2 .2 in
+    if #st[#idx].1 then (* locked *)
+      let st <- #st[#idx] = (false, #data) in
+      return #st
+    else  (* Do nothing *)
+      return #st)).
+
+  Definition impl {var} : @RfScored var log_nregs State t_data := {|
+    RfScored.acquireLock := acquireLock;
+    RfScored.releaseLock := releaseLock;
+    RfScored.writeAndRelease := writeAndRelease;
+    RfScored.read := read;
+    RfScored.isLocked := isLocked
+  |}.
+
+  Coercion rep (v : state) : type.reify'' state :=
+    ltac2:(let t := &v in exact $t).
+
+  (* TODO: vector access *)
+  Lemma foo (s : state) idx data : 
+    fn.interp writeAndRelease (s, (idx, data)) = s.
+  Proof. 
+    simpl.
+  Abort.
+
+End rfScored. End rfScored.
+
+Module Bht. 
+  Record Bht {var} {addr_sz} (t_state: type) := {
+    update : fn var (Pair t_state (Pair (Bits addr_sz) Bool)) t_state; (* update (pc, taken) *)      
+    ppcDp : fn var (Pair t_state (Pair (Bits addr_sz) (Bits addr_sz))) (Bits addr_sz); (* ppcDp (pc, targetPc) *)
+  }.
+End Bht. Notation Bht := Bht.Bht (only parsing).
+
+Module bht. Section bht.
+  Notation histLen := 2%Z.
+  Context {idxSz : Z}.
+  Notation lenHist := (2%Z).              
+  Context {var: type -> Type}.
+  Context {addrSz: Z}.
+
+  Definition nEntries : nat := Z.to_nat (2^idxSz).
+
+  Notation state := (Vector.t (Bits histLen) nEntries).
+  Definition State := type.reify'' state.
+  Import (notations) eexpr expr. Local Open Scope string_scope.
+
+  Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+    return #pc + (_ 'd 4))).
+
+  Let getIndex {var} : fn _ _ (Bits idxSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+    return $(expr.Unop unop.UnsignedResize (expr.Var pc)))).
+
+  Let computeTarget {var} : fn _ _ (Bits addrSz) := Fn (fun (args: var (Pair (Pair (Bits addrSz) (Bits addrSz)) Bool)) => quartz_eexpr:( 
+    let pc := #args .1 .1 in let targetPc := #args .1 .2 in let taken := #args .2 in
+    return if #taken then #targetPc else defaultNextPc (#pc))).
+
+  Let extractDir {var} : fn _ _ Bool := Fn (fun (dp: var (Bits histLen)) => quartz_eexpr:(
+    return (#dp == _ 'd 3) || (#dp == _ 'd 2)
+  )).
+
+  Let newDP {var} : fn _ _ (Bits histLen) := Fn (fun (p: var (Pair (Bits histLen) Bool)) => quartz_eexpr:(
+    let dpBits := #p .1 in let taken := #p .2 in
+    if #taken then
+      return (if #dpBits == _ 'd 3 then #dpBits else #dpBits + _ 'd 1)
+    else 
+      return (if ! #dpBits then #dpBits else #dpBits - _ 'd 1)
+ )).
+
+  Let ppcDp {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
+    let st := #p .1 in let pc := #p .2 .1 in let targetPc := #p .2 .2 in
+    let index := getIndex ( #pc ) in
+    let entry := #st[#index] in
+    let direction := extractDir (#entry) in
+    return computeTarget ( ((#pc, #targetPc), #direction) )
+  )).
+
+  Let update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) Bool))) => quartz_eexpr:(
+     let st := #p .1 in let pc := #p .2 .1 in let taken := #p .2 .2 in
+     let index := getIndex ( #pc ) in
+     let entry := #st[#index] in
+     let dp' := newDP ( (#entry, #taken) ) in
+     let st <- #st[#index] = #dp' in
+     return #st
+  )).
+
+  Coercion rep (v : state) : type.reify'' state :=
+    ltac2:(let t := &v in exact $t).
+
+  Definition impl {var} : @Bht var addrSz State := {|
+    Bht.update := update;
+    Bht.ppcDp := ppcDp
+  |}.
+
+ 
+End bht. End bht.
 
 End InterfaceExample.
