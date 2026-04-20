@@ -210,6 +210,7 @@ Module binop.
   | Srs {n m} : binop (Bits n) (Bits m) (Bits n)
   | BAnd : binop Bool Bool Bool
   | BOr : binop Bool Bool Bool
+  | Mul {n m z} : binop (Bits n) (Bits m) (Bits z) 
   | EqBits {n} : binop (Bits n) (Bits n) Bool
   | Compare (signed: bool) (c: compare) {n} : binop (Bits n) (Bits n) Bool
   | MkPair {a b: type} : binop a b (Pair a b).
@@ -224,6 +225,7 @@ Module binop.
     | Srs => fun a b => Zmod.srs a (Zmod.unsigned b)
     | BAnd => andb
     | BOr => orb
+    | @Mul _ _ z => fun a b => Zmod.of_Z (2^z) (Zmod.unsigned a * Zmod.unsigned b)
     | EqBits => Zmod.eqb
     | Compare signed c => fun a b =>
         match c with cLt => Z.ltb | cGt => Z.gtb | cLe => Z.leb | cGe => Z.geb end
@@ -383,6 +385,7 @@ Module expr.
     (in custom quartz_expr at level 0, x custom quartz_expr at level 200,
      y custom quartz_expr at level 200, z custom quartz_expr at level 200,
      format "( '[' x , '/' y , '/' .. , '/' z ']' )").
+  Notation "e1 * e2" := (expr.Binop binop.And e1 e2) (in custom quartz_expr at level 39, left associativity).
   Notation "e1 & e2" := (expr.Binop binop.And e1 e2) (in custom quartz_expr at level 40, left associativity).
   Notation "e1 + e2" := (expr.Binop binop.Add e1 e2) (in custom quartz_expr at level 50, left associativity).
   Notation "e1 | e2" := (expr.Binop binop.Or e1 e2) (in custom quartz_expr at level 50, left associativity).
@@ -757,6 +760,7 @@ Module sv.
     | @binop.BAnd => "("++e1_str++" && "++e2_str++")"
     | @binop.BOr => "("++e1_str++" || "++e2_str++")"
     | @binop.EqBits n => "("++e1_str++" == "++e2_str++")"
+    | @binop.Mul n m z => pp_Z m ++ "'($unsigned(" ++e1_str++" * "++e2_str++"))" (* TODO: is truncation needed? *)
     | @binop.Compare signed c n =>
         let op_str := match c with
           | binop.cLt => "<" | binop.cGt => ">"
@@ -989,6 +993,8 @@ Section Test.
       let is_z   := ! #a in
       let un_ur : Bits 16 := $(expr.Unop unop.UnsignedResize (expr.Var a)) in
       let un_sr : Bits 16 := $(expr.Unop unop.SignedResize (expr.Var a)) in
+      let mul1 : Bits 32 := $(expr.Binop binop.Mul (expr.Var a) (expr.Var b)) in 
+      let mul2 : Bits 32 := #a * #b in 
       let b_add := #a + #b in
       let b_and := #a & #b in
       let b_or  := #a | #b in
