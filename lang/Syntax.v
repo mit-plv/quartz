@@ -12,17 +12,16 @@ Open Scope Z_scope.
 Module type.
   Local Set Boolean Equality Schemes.
   Inductive type :=
-  | Bool
   | Bits (sz: Z)
   | Pair (_ _ : type)
   | Either (_ _ : type)
   | Struct (name : string) (_ : list (string * type))
   | Array (t: type) (sz: nat).
   Notation Unit := (Bits 0) (only parsing).
+  Notation Bool := (Bits 1) (only parsing).
 
   Fixpoint interp t : Type :=
     match t with
-    | Bool => bool
     | Bits sz => bits sz
     | Pair a b => interp a * interp b
     | Either a b => interp a + interp b
@@ -53,7 +52,6 @@ Module type.
   End WithDefault.
   Fixpoint default (t : type) : t :=
     match t return t with
-    | Bool => false
     | Bits sz => Zmod.zero
     | Pair a b => (default a, default b)
     | Either a b => inl (default a) (* TODO: confirm this *)
@@ -65,7 +63,6 @@ Module type.
   Ltac2 rec reify t :=
     lazy_match! t with
     | type.interp ?t => t
-    | bool => 'type.Bool
     | bits ?n => constr:(type.Bits $n)
     | prod ?t1 ?t2 =>
         let rt1 := reify t1 in
@@ -156,6 +153,20 @@ Module struct.
     | _ => Control.throw (RepUnknown (Constr.type v))
     end.
 End struct.
+
+Module Import Zmod.
+  Coercion embed_bool (b : bool) : Zmod 2 := Zmod.of_Z _ (Z.b2z b).
+  Coercion nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero).
+  Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed.
+  Inductive Cases2 : Zmod 2 -> Prop :=
+  | Cases2_0 : Cases2 (Zmod.mk 2 0 I) | Cases2_1 : Cases2 (Zmod.mk 2 1 I).
+  Lemma cases2 (x : Zmod 2) : Cases2 x.
+  Proof. destruct (Zmod.in_elements x ltac:(inversion 1)); intuition subst; constructor. Qed.
+  Inductive BoolCases : Zmod 2 -> Prop :=
+  | BoolTrue : BoolCases true | BoolFalse : BoolCases false.
+  Lemma bool_cases (b : Zmod 2) : BoolCases b.
+  Proof. destruct (Zmod.in_elements b ltac:(inversion 1)); intuition subst; constructor. Qed.
+End Zmod.
 
 Module Vector.
   Section WithT.
@@ -333,7 +344,7 @@ Module expr.
     | Get _ r i => typeWithHole.get (interp r) (interp i)
     | Unop op e1 => unop.interp op (interp e1)
     | Binop op e1 e2 => binop.interp op (interp e1) (interp e2)
-    | If e a b => if interp e then interp a else interp b
+    | If e a b => if interp e : bool then interp a else interp b
     | Call f e => f (interp e)
     end.
 
@@ -420,7 +431,7 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
     | Ret e => expr.interp e
     | Let _ a b => let x := expr.interp a in interp (b x)
     | Bind _ a b => let x := interp a in interp (b x)
-    | If e a b => if expr.interp e then interp a else interp b
+    | If e a b => if expr.interp e : bool then interp a else interp b
     | Case e l r => match expr.interp e with inl v => interp (l v) | inr v => interp (r v) end
     | Upd i s v => typeWithHole.upd (expr.interp s) (expr.interp i) (fun _ => expr.interp v)
     end.
@@ -644,7 +655,6 @@ Module sv.
   Fixpoint pp_type (t : type) : string :=
     match t with
     | type.Unit => "unit"
-    | type.Bool => "bit"
     | type.Bits sz => "bit["++pp_Z (sz - 1)++":0]"
     | type.Pair a b => "Pair#("++pp_type a++", "++pp_type b++")::t"
     | type.Either a b => "Either#("++pp_type a++", "++pp_type b++")::t"
@@ -667,7 +677,6 @@ Module sv.
   Fixpoint pp_const {t : type} : type.interp t -> string :=
     match t return type.interp t -> string with
     | type.Unit => fun b => "tt"
-    | type.Bool => fun b => if b then "1'b1" else "1'b0"
     | type.Bits sz => fun v => pp_Z sz++"'d"++pp_Z (Zmod.unsigned v)
     | type.Pair a b => fun p =>
         "Pair#("++pp_type a++", "++pp_type b++")::mk("++
@@ -942,7 +951,7 @@ Section Test.
       return #arr_new).
   Compute sv.pp (fns.Ret "increment_element" "arr" increment_element).
 
-  Record Pixel := { valid : bool; red : bits 8; green : bits 8; blue : bits 8 }.
+  Record Pixel := { valid : Bool; red : bits 8; green : bits 8; blue : bits 8 }.
 
   Let invert_red {var fn} : var (type.reify'' Pixel) -> eexpr var fn _ :=
     fun p => quartz_eexpr:(
@@ -1042,7 +1051,7 @@ End Fifo. Notation Fifo := Fifo.Fifo (only parsing).
 Module fifo1. Section fifo1.
   Context (t : type).
 
-  Record state := { valid : bool; payload : t; }.
+  Record state := { valid : Bool; payload : t; }.
 
   Definition State := type.reify'' state.
 
@@ -1058,7 +1067,7 @@ Module fifo1. Section fifo1.
     return #st..valid)).
 
   Let empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
-    return if #st..valid then false else true)).
+    return ! #st..valid )).
 
   Let enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
       let st := #p .1 in let d  := #p .2 in
@@ -1086,8 +1095,8 @@ Module fifo1. Section fifo1.
   Lemma not_full_and_empty (st : state) :
     fn.interp empty st <> fn.interp full st.
   Proof.
-    cbn. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
-    (* (if valid st then false else true) <> valid st *) destruct (valid st); congruence.
+    cbn -[Zmod.eqb]. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
+    (* embed_bool (Zmod.eqb 0 (valid st)) <> valid st *) case (Zmod.bool_cases (valid st)); cbv; congruence.
   Qed.
 End fifo1. End fifo1.
 
