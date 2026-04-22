@@ -422,4 +422,63 @@ Module btb. Section btb.
 
 End btb. End btb.
 
+Module CsrFile.
+  Record CsrFile {var} {idxSz} {wordSz} (t_state: type) := {
+    readCsr : fn var (Pair t_state (Bits idxSz)) (Bits wordSz);
+    writeCsr : fn var (Pair t_state (Pair (Bits idxSz) (Bits wordSz))) t_state
+  }.
+
+End CsrFile. Notation CsrFile := CsrFile.CsrFile (only parsing).
+
+Module csrFile. Section csrFile.
+  Notation CsrIdx := (Bits 12) (only parsing).
+  Notation mword := (Bits 32).
+  Definition CSR_mtvec : CsrIdx := Zmod.of_Z _ 773.
+  Definition CSR_mepc : CsrIdx := Zmod.of_Z _ 833.
+  Definition CSR_mcause : CsrIdx := Zmod.of_Z _ 834.
+  Definition CSR_mtval : CsrIdx := Zmod.of_Z _ 835.
+  Definition CSR_mie : CsrIdx := Zmod.of_Z _ 0x304. 
+
+  Record state := { csr_mtvec : mword;
+                    csr_mepc : mword;
+                    csr_mcause : mword;
+                    csr_mtval : mword;
+                    csr_mie : mword 
+                  }.
+  Definition State := type.reify'' state.
+
+  Import (notations) eexpr expr. Local Open Scope string_scope.
+
+  Let readCsr {var} : fn _ _ mword := Fn (fun (p : var (Pair State CsrIdx)) => quartz_eexpr:(
+    let st := #p .1 in let csr := #p .2 in
+    if #csr == const CSR_mtvec then return #st..csr_mtvec
+    else if #csr == const CSR_mepc then return #st..csr_mepc
+    else if #csr == const CSR_mcause then return #st..csr_mcause
+    else if #csr == const CSR_mtval then return #st..csr_mtval
+    else if #csr == const CSR_mie then return #st..csr_mie
+    else return _ 'd 0
+  )).
+
+  Let writeCsr {var} : fn _ _ State := Fn (fun (p : var (Pair State (Pair CsrIdx mword))) => quartz_eexpr:(
+    let st := #p .1 in let csr := #p .2 .1 in let val := #p .2 .2 in
+    if #csr == const CSR_mtvec then
+      let st <- #st..csr_mtvec = #val in return #st
+    else if #csr == const CSR_mepc  then
+      let st <- #st..csr_mepc = #val in return #st
+    else if #csr == const CSR_mcause then
+      let st <- #st..csr_mcause = #val in return #st
+    else if #csr == const CSR_mtval then
+      let st <- #st..csr_mtval = #val in return #st
+    else if #csr == const CSR_mie then
+      let st <- #st..csr_mie = #val in return #st
+    else return #st
+  )).
+
+  Definition impl {var} : @CsrFile var 12 32 State := {|
+    CsrFile.readCsr := readCsr;
+    CsrFile.writeCsr := writeCsr
+  |}.
+
+End csrFile. End csrFile.
+
 End InterfaceExample.
