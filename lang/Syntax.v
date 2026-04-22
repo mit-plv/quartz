@@ -12,17 +12,16 @@ Open Scope Z_scope.
 Module type.
   Local Set Boolean Equality Schemes.
   Inductive type :=
-  | Bool
   | Bits (sz: Z)
   | Pair (_ _ : type)
   | Either (_ _ : type)
   | Struct (name : string) (_ : list (string * type))
   | Array (t: type) (sz: nat).
   Notation Unit := (Bits 0) (only parsing).
+  Notation Bool := (Bits 1) (only parsing).
 
   Fixpoint interp t : Type :=
     match t with
-    | Bool => bool
     | Bits sz => bits sz
     | Pair a b => interp a * interp b
     | Either a b => interp a + interp b
@@ -53,7 +52,6 @@ Module type.
   End WithDefault.
   Fixpoint default (t : type) : t :=
     match t return t with
-    | Bool => false
     | Bits sz => Zmod.zero
     | Pair a b => (default a, default b)
     | Either a b => inl (default a) (* TODO: confirm this *)
@@ -65,7 +63,6 @@ Module type.
   Ltac2 rec reify t :=
     lazy_match! t with
     | type.interp ?t => t
-    | bool => 'type.Bool
     | bits ?n => constr:(type.Bits $n)
     | prod ?t1 ?t2 =>
         let rt1 := reify t1 in
@@ -157,6 +154,20 @@ Module struct.
     end.
 End struct.
 
+Module Import Zmod.
+  Coercion embed_bool (b : bool) : Zmod 2 := Zmod.of_Z _ (Z.b2z b).
+  Coercion nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero).
+  Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed.
+  Inductive Cases2 : Zmod 2 -> Prop :=
+  | Cases2_0 : Cases2 (Zmod.mk 2 0 I) | Cases2_1 : Cases2 (Zmod.mk 2 1 I).
+  Lemma cases2 (x : Zmod 2) : Cases2 x.
+  Proof. destruct (Zmod.in_elements x ltac:(inversion 1)); intuition subst; constructor. Qed.
+  Inductive BoolCases : Zmod 2 -> Prop :=
+  | BoolTrue : BoolCases true | BoolFalse : BoolCases false.
+  Lemma bool_cases (b : Zmod 2) : BoolCases b.
+  Proof. destruct (Zmod.in_elements b ltac:(inversion 1)); intuition subst; constructor. Qed.
+End Zmod.
+
 Module Vector.
   Section WithT.
   Context {T : Type}.
@@ -176,7 +187,6 @@ Module unop.
   Inductive unop : type -> type -> Type :=
   | IsZero {n} : unop (Bits n) Bool
   | Not {n} : unop (Bits n) (Bits n) (* bitwise completement *)
-  | BNot : unop Bool Bool (* bitwise completement *)
   | Opp {n} : unop (Bits n) (Bits n) (* arithmetic negation *)
   | UnsignedResize {n m} : unop (Bits n) (Bits m) (* zero-extend or truncate *)
   | SignedResize {n m} : unop (Bits n) (Bits m) (* sign-extend or truncate *)
@@ -188,7 +198,6 @@ Module unop.
     match op in unop a b return a -> b with
     | IsZero => Zmod.eqb Zmod.zero
     | Not => Zmod.not
-    | BNot => negb
     | Opp => Zmod.opp
     | UnsignedResize => fun v => bits.of_Z _ (Zmod.unsigned v)
     | SignedResize => fun v => bits.of_Z _ (Zmod.signed v)
@@ -209,8 +218,6 @@ Module binop.
   | Slu {n m} : binop (Bits n) (Bits m) (Bits n)
   | Sru {n m} : binop (Bits n) (Bits m) (Bits n)
   | Srs {n m} : binop (Bits n) (Bits m) (Bits n)
-  | BAnd : binop Bool Bool Bool
-  | BOr : binop Bool Bool Bool
   | Mul {n m z} : binop (Bits n) (Bits m) (Bits z) 
   | EqBits {n} : binop (Bits n) (Bits n) Bool
   | Compare (signed: bool) (c: compare) {n} : binop (Bits n) (Bits n) Bool
@@ -225,8 +232,6 @@ Module binop.
     | Slu => fun a b => Zmod.slu a (Zmod.unsigned b)
     | Sru => fun a b => Zmod.sru a (Zmod.unsigned b)
     | Srs => fun a b => Zmod.srs a (Zmod.unsigned b)
-    | BAnd => andb
-    | BOr => orb
     | @Mul _ _ z => fun a b => Zmod.of_Z (2^z) (Zmod.unsigned a * Zmod.unsigned b)
     | EqBits => Zmod.eqb
     | Compare signed c => fun a b =>
@@ -343,7 +348,7 @@ Module expr.
     | Get _ r i => typeWithHole.get (interp r) (interp i)
     | Unop op e1 => unop.interp op (interp e1)
     | Binop op e1 e2 => binop.interp op (interp e1) (interp e2)
-    | If e a b => if interp e then interp a else interp b
+    | If e a b => if interp e : bool then interp a else interp b
     | Call f e => f (interp e)
     end.
 
@@ -377,8 +382,6 @@ Module expr.
   Notation "- e" := (expr.Unop unop.Opp e) (in custom quartz_expr at level 35, right associativity).
   Notation "! e" := (expr.Unop unop.IsZero e) (in custom quartz_expr at level 35, right associativity).
   Notation "~ e" := (expr.Unop unop.Not e) (in custom quartz_expr at level 35, right associativity).
-  Notation "'not' e" := (expr.Unop unop.BNot e) (in custom quartz_expr at level 35, right associativity).
-
   Notation "'left' e" := (expr.Unop unop.Left e) (in custom quartz_expr at level 10, right associativity).
   Notation "'right' e" := (expr.Unop unop.Right e) (in custom quartz_expr at level 10, right associativity).
 
@@ -395,8 +398,6 @@ Module expr.
   Notation "e1 << e2" := (expr.Binop binop.Slu e1 e2) (in custom quartz_expr at level 60, left associativity).
   Notation "e1 >> e2" := (expr.Binop binop.Sru e1 e2) (in custom quartz_expr at level 60, left associativity).
   Notation "e1 .>> e2" := (expr.Binop binop.Srs e1 e2) (in custom quartz_expr at level 60, left associativity).
-  Notation "e1 && e2" := (expr.Binop binop.BAnd e1 e2) (in custom quartz_expr at level 40, left associativity).
-  Notation "e1 || e2" := (expr.Binop binop.BOr e1 e2) (in custom quartz_expr at level 50, left associativity).
 
   Notation "e1 == e2" := (expr.Binop binop.EqBits e1 e2) (in custom quartz_expr at level 70, no associativity).
   Notation "e1 < e2" := (expr.Binop (binop.Compare Datatypes.false binop.cLt) e1 e2) (in custom quartz_expr at level 70, no associativity).
@@ -436,7 +437,7 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
     | Ret e => expr.interp e
     | Let _ a b => let x := expr.interp a in interp (b x)
     | Bind _ a b => let x := interp a in interp (b x)
-    | If e a b => if expr.interp e then interp a else interp b
+    | If e a b => if expr.interp e : bool then interp a else interp b
     | Case e l r => match expr.interp e with inl v => interp (l v) | inr v => interp (r v) end
     | Upd i s v => typeWithHole.upd (expr.interp s) (expr.interp i) (fun _ => expr.interp v)
     end.
@@ -660,7 +661,6 @@ Module sv.
   Fixpoint pp_type (t : type) : string :=
     match t with
     | type.Unit => "unit"
-    | type.Bool => "bit"
     | type.Bits sz => "bit["++pp_Z (sz - 1)++":0]"
     | type.Pair a b => "Pair#("++pp_type a++", "++pp_type b++")::t"
     | type.Either a b => "Either#("++pp_type a++", "++pp_type b++")::t"
@@ -683,7 +683,6 @@ Module sv.
   Fixpoint pp_const {t : type} : type.interp t -> string :=
     match t return type.interp t -> string with
     | type.Unit => fun b => "tt"
-    | type.Bool => fun b => if b then "1'b1" else "1'b0"
     | type.Bits sz => fun v => pp_Z sz++"'d"++pp_Z (Zmod.unsigned v)
     | type.Pair a b => fun p =>
         "Pair#("++pp_type a++", "++pp_type b++")::mk("++
@@ -744,7 +743,6 @@ Module sv.
     match op with
     | @unop.IsZero n => "("++e1_str++" == 0)"
     | @unop.Not n => "(~"++e1_str++")"
-    | @unop.BNot => "(!"++e1_str++")"
     | @unop.Opp n => "(-"++e1_str++")"
     | @unop.UnsignedResize n m => pp_Z m ++ "'($unsigned("++e1_str++"))"
     | @unop.SignedResize n m => "$unsigned(" ++ pp_Z m ++ "'($signed("++e1_str++")))"
@@ -760,9 +758,7 @@ Module sv.
     | @binop.Or n => "("++e1_str++" | "++e2_str++")"
     | @binop.Slu n m => "("++e1_str++" << "++e2_str++")"
     | @binop.Sru n m => "("++e1_str++" >> "++e2_str++")"
-    | @binop.Srs n m => "($signed("++e1_str++") >>> "++e2_str++")"
-    | @binop.BAnd => "("++e1_str++" && "++e2_str++")"
-    | @binop.BOr => "("++e1_str++" || "++e2_str++")"
+    | @binop.Srs n m => "$unsigned(($signed("++e1_str++") >>> "++e2_str++"))"
     | @binop.EqBits n => "("++e1_str++" == "++e2_str++")"
     | @binop.Mul n m z => pp_Z m ++ "'($unsigned(" ++e1_str++" * "++e2_str++"))" (* TODO: is truncation needed? *)
     | @binop.Compare signed c n =>
@@ -929,14 +925,14 @@ Module sv.
 typedef enum { tt } unit;
 
 class Pair #(parameter type A, parameter type B);
-  typedef struct { A fst; B snd; } t;
+  typedef struct packed { A fst; B snd; } t;
   static function A fst (t p); return p.fst; endfunction
   static function B snd (t p); return p.snd; endfunction
   static function t mk (A a, B b); return t'{a, b}; endfunction
 endclass
 
 class Either #(parameter type A, parameter type B);
-  typedef union tagged { A left; B right; } t;
+  typedef union tagged packed { A left; B right; } t;
   static function t left(A a); return tagged left a; endfunction
   static function t right(B b); return tagged right b; endfunction
 endclass"++LF++LF++
@@ -963,7 +959,7 @@ Section Test.
       return #arr_new).
   Compute sv.pp (fns.Ret "increment_element" "arr" increment_element).
 
-  Record Pixel := { valid : bool; red : bits 8; green : bits 8; blue : bits 8 }.
+  Record Pixel := { valid : Bool; red : bits 8; green : bits 8; blue : bits 8 }.
 
   Let invert_red {var fn} : var (type.reify'' Pixel) -> eexpr var fn _ :=
     fun p => quartz_eexpr:(
@@ -983,17 +979,14 @@ Section Test.
       return #p_new).
   Compute sv.pp (fns.Ret "invert_red2" "invert_red2" invert_red2).
 
-  Record OpsRecord := { val_a : bits 32; val_b : bits 32; bool_a : bool; bool_b : bool }.
+  Record OpsRecord := { val_a : bits 32; val_b : bits 32; }.
 
   Let all_ops_test {var fn} : var (type.reify'' OpsRecord) -> eexpr var fn type.Bool :=
     fun p => quartz_eexpr:(
       let a := #p .. val_a in
       let b := #p .. val_b in
-      let bool_a := #p .. bool_a in
-      let bool_b := #p .. bool_b in
       let un_opp := - #a in
       let un_not := ~ #a in
-      let un_bnot := not #bool_a in
       let is_z   := ! #a in
       let un_ur : Bits 16 := $(expr.Unop unop.UnsignedResize (expr.Var a)) in
       let un_sr : Bits 16 := $(expr.Unop unop.SignedResize (expr.Var a)) in
@@ -1006,8 +999,6 @@ Section Test.
       let b_slu := #a << #un_ur in
       let b_sru := #a >> #un_ur in
       let b_srs := #a .>> #un_ur in
-      let b_band := #bool_a && #bool_b in
-      let b_bor := #bool_a || #bool_b in
       let b_eq := #a == #b in
       let b_lt := #a < #b in
       let b_gt := #a > #b in
@@ -1071,7 +1062,7 @@ End Fifo. Notation Fifo := Fifo.Fifo (only parsing).
 Module fifo1. Section fifo1.
   Context (t : type).
 
-  Record state := { valid : bool; payload : t; }.
+  Record state := { valid : Bool; payload : t; }.
 
   Definition State := type.reify'' state.
 
@@ -1087,7 +1078,7 @@ Module fifo1. Section fifo1.
     return #st..valid)).
 
   Let empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
-    return if #st..valid then false else true)).
+    return ! #st..valid )).
 
   Let enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
       let st := #p .1 in let d  := #p .2 in
@@ -1115,8 +1106,8 @@ Module fifo1. Section fifo1.
   Lemma not_full_and_empty (st : state) :
     fn.interp empty st <> fn.interp full st.
   Proof.
-    cbn. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
-    (* (if valid st then false else true) <> valid st *) destruct (valid st); congruence.
+    cbn -[Zmod.eqb]. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
+    (* embed_bool (Zmod.eqb 0 (valid st)) <> valid st *) case (Zmod.bool_cases (valid st)); cbv; congruence.
   Qed.
 End fifo1. End fifo1.
 
