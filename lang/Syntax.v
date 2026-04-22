@@ -412,6 +412,7 @@ Module expr.
 
   Notation "'if' cond 'then' a 'else' b" := (expr.If cond a b)
     (in custom quartz_expr at level 200, cond custom quartz_expr at level 200, a custom quartz_expr at level 200, b custom quartz_expr at level 200).
+
 End expr.
 Notation expr := expr.expr.
 

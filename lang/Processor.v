@@ -15,6 +15,15 @@ Import fn.
 Import type.
 Open Scope Z_scope.
 
+Module QStdlib.
+  Import (notations) eexpr expr. Local Open Scope string_scope.
+
+  Definition ExtractBits {var} (n s l: Z) : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
+    let shift_amt : Bits n := _ 'd (n - s) in
+    let shifted_b := #b >> #shift_amt in    
+    return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))).
+  
+End QStdlib.
 
 Module Fifo.
 Record Fifo {var} (t_state t_data : type) := {
@@ -294,7 +303,9 @@ Module bht. Section bht.
     return #pc + (_ 'd 4))).
 
   Let getIndex {var} : fn _ _ (Bits idxSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
-    return $(expr.Unop unop.UnsignedResize (expr.Var pc)))).
+    let shift_amt : Bits addrSz := _ 'd 2 in 
+    let shifted_pc := #pc >> #shift_amt in
+    return $(expr.Unop unop.UnsignedResize (expr.Var shifted_pc)))).
 
   Let computeTarget {var} : fn _ _ (Bits addrSz) := Fn (fun (args: var (Pair (Pair (Bits addrSz) (Bits addrSz)) Bool)) => quartz_eexpr:( 
     let pc := #args .1 .1 in let targetPc := #args .1 .2 in let taken := #args .2 in
@@ -339,5 +350,76 @@ Module bht. Section bht.
 
  
 End bht. End bht.
+
+Module Btb. 
+  Record Btb {var} {addrSz} (t_state: type) := {
+    update : fn var (Pair t_state (Pair (Bits addrSz) (Bits addrSz))) t_state; (* update (pc, nextPc *)  
+    predPc : fn var (Pair t_state (Bits addrSz)) (Bits addrSz)
+  }.
+End Btb. Notation Btb := Btb.Btb (only parsing).
+
+Module btb. Section btb.
+  Context {addrSz: Z}.              
+  Context {tagSz: Z}.              
+  Context {idxSz: Z}.
+
+  Definition nEntries : nat := Z.to_nat (2^idxSz).
+             
+  Record state := { targets: Vector.t (Bits addrSz) nEntries;
+                    tags : Vector.t (Bits tagSz) nEntries;
+                    valid : Vector.t Bool nEntries }. 
+
+  Definition State := type.reify'' state.
+
+  Import (notations) eexpr expr. Local Open Scope string_scope.
+
+  Let getIndex {var} : fn _ _ (Bits idxSz) := 
+      @QStdlib.ExtractBits var addrSz 2 idxSz.  
+  Let getTag {var} : fn _ _ (Bits tagSz) := 
+      @QStdlib.ExtractBits var addrSz (addrSz - tagSz) tagSz. 
+
+  Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+    return #pc + (_ 'd 4))).
+
+  Let predPc {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Bits addrSz))) => quartz_eexpr:( 
+    let st := #p .1 in let pc := #p .2 in 
+    let index := getIndex (#pc) in
+    let tag := getTag (#pc) in
+    let lookup_tag := #st..tags[#index] in
+    let lookup_valid := #st..valid[#index] in
+    if (#lookup_tag == #tag) & #lookup_valid  then
+      let target := #st..targets[#index] in
+      return #target
+    else
+      return defaultNextPc (#pc)
+  )).
+
+  Let update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
+    let st := #p .1 in let pc := #p .2 .1 in let nextPc := #p .2 .2 in
+    let index := getIndex (#pc) in
+    let tag := getTag (#pc) in
+    let lookup_tag := #st..tags[#index] in
+    if ~ (#nextPc == defaultNextPc (#pc)) then
+      (* TODO: updating a submodule array *)
+      let valid' <- (#st..valid)[#index] = true in            
+      let targets' <- (#st..targets)[#index] = #nextPc in            
+      let tags' <- (#st..tags)[#index] = #tag in            
+      let st <- #st..valid = #valid' in
+      let st <- #st..targets = #targets' in
+      let st <- #st..tags = #tags' in
+      return #st
+    else
+      return #st                                            
+  )). 
+
+  Coercion rep (v : state) : type.reify'' state :=
+    ltac2:(let t := struct.rep &v in exact $t).
+
+  Definition impl {var} : @Btb var addrSz State := {|
+    Btb.update := update;
+    Btb.predPc := predPc 
+  |}.
+
+End btb. End btb.
 
 End InterfaceExample.
