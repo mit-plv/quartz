@@ -15,6 +15,7 @@ Import fn.
 Import type.
 Open Scope Z_scope.
 
+
 Module Fifo.
 Record Fifo {var} (t_state t_data : type) := {
   first    : fn var t_state t_data;
@@ -28,7 +29,7 @@ End Fifo. Notation Fifo := Fifo.Fifo (only parsing).
 Module fifo1. Section fifo1.
   Context (t : type).
 
-  Record state := { valid : bool; data : t; }.
+  Record state := { valid : Bool; data : t; }.
 
   Definition State := type.reify'' state.
 
@@ -38,7 +39,7 @@ Module fifo1. Section fifo1.
     return #st..valid)).
 
   Let empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
-    return if #st..valid then false else true)).
+    return ! #st..valid )).
 
   Let first {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let out_d := #st..data in
@@ -70,7 +71,8 @@ Module fifo1. Section fifo1.
   Proof. trivial. Qed.
   Lemma full_ok (s : state) : fn.interp full s = s.(valid).
   Proof. trivial. Qed.
-  Lemma empty_ok (s : state) : fn.interp empty s = negb s.(valid).
+
+  Lemma empty_ok (s : state) : fn.interp empty s = embed_bool (Zmod.eqb s.(valid) Zmod.zero).
   Proof. trivial. Qed.
 
   Lemma enq_ok (s : state) x :
@@ -85,8 +87,8 @@ Module fifo1. Section fifo1.
   Lemma not_full_and_empty (st : state) :
     fn.interp empty st <> fn.interp full st.
   Proof.
-    cbn. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
-    (* (if valid st then false else true) <> valid st *) destruct (valid st); congruence.
+    cbn -[Zmod.eqb]. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
+    case (Zmod.bool_cases (valid st)); cbv; congruence.
   Qed.
 End fifo1. End fifo1.
 
@@ -113,12 +115,12 @@ Module multiplier. Section multiplier.
   Definition Req := type.reify'' req_t.
 
   Record state := { 
-    valid : bool; 
+    valid : Bool; 
     op1 : Bits width;
     op2 : Bits width;
     result : Bits (width + width);
     nstep : Bits logNSteps;
-    finished : bool
+    finished : Bool
   }. 
 
   Definition State := type.reify'' state.
@@ -157,8 +159,8 @@ Module multiplier. Section multiplier.
     else return #st)).
 
   Let tick {var} := Fn (fun (st: var State) => quartz_eexpr:(
-     if #st..valid && not #st..finished then
-       if !#st..op1 || !#st..op2 then (* zero-skip *)
+     if #st..valid & ! #st..finished then
+       if !#st..op1 | !#st..op2 then (* zero-skip *)
          let st <- #st..finished = true in 
          let st <- #st..result = _ 'd 0 in 
          return #st
@@ -213,7 +215,7 @@ Module rfScored. Section rfScored.
   Notation t_idx := (Bits log_nregs).
 
   Definition nregs : nat := Z.to_nat (2^log_nregs).
-  Notation state := (Vector.t (bool * t_data) nregs).
+  Notation state := (Vector.t (Bool * t_data) nregs).
   Definition State := type.reify'' state.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
@@ -299,7 +301,7 @@ Module bht. Section bht.
     return if #taken then #targetPc else defaultNextPc (#pc))).
 
   Let extractDir {var} : fn _ _ Bool := Fn (fun (dp: var (Bits histLen)) => quartz_eexpr:(
-    return (#dp == _ 'd 3) || (#dp == _ 'd 2)
+    return (#dp == _ 'd 3) | (#dp == _ 'd 2)
   )).
 
   Let newDP {var} : fn _ _ (Bits histLen) := Fn (fun (p: var (Pair (Bits histLen) Bool)) => quartz_eexpr:(

@@ -154,9 +154,10 @@ Module struct.
     end.
 End struct.
 
+Coercion embed_bool (b : bool) : Zmod 2 := Zmod.of_Z _ (Z.b2z b).
+Coercion nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero).
+
 Module Import Zmod.
-  Coercion embed_bool (b : bool) : Zmod 2 := Zmod.of_Z _ (Z.b2z b).
-  Coercion nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero).
   Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed.
   Inductive Cases2 : Zmod 2 -> Prop :=
   | Cases2_0 : Cases2 (Zmod.mk 2 0 I) | Cases2_1 : Cases2 (Zmod.mk 2 1 I).
@@ -1102,6 +1103,9 @@ Module fifo1. Section fifo1.
 
   Coercion rep (v : state) : type.reify'' state :=
     ltac2:(let t := struct.rep &v in exact $t).
+
+  Lemma empty_ok (s : state) : fn.interp empty s = Zmod.eqb s.(valid) Zmod.zero.
+  Proof. trivial. Qed.
 
   Lemma not_full_and_empty (st : state) :
     fn.interp empty st <> fn.interp full st.
