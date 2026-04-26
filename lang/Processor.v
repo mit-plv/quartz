@@ -19,7 +19,7 @@ Module QStdlib.
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
   Definition ExtractBits {var} (n s l: Z) : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
-    let shift_amt : Bits n := _ 'd (n - s) in
+    let shift_amt : Bits n := _ 'd s in
     let shifted_b := #b >> #shift_amt in    
     return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))).
   
@@ -38,6 +38,7 @@ End Fifo. Notation Fifo := Fifo.Fifo (only parsing).
 Module fifo1. Section fifo1.
   Context (t : type).
 
+  (* TODO: bool state type? *)
   Record state := { valid : Bool; data : t; }.
 
   Definition State := type.reify'' state.
@@ -216,15 +217,17 @@ Record RfScored (t_state t_data : type) := {
 }.
 End RfScored. End RfScored. Notation RfScored := RfScored.RfScored (only parsing).
 
-Module rfScored. Section rfScored.
+Module rfScored. 
+  (* TODO: non-record type *)
+  Notation state' t_data nregs := (Vector.t (Bool * t_data) nregs).
+  Section rfScored.
   Context {var: type -> Type}.
   Context {log_nregs: Z}.
   Context (t_data : type).
 
   Notation t_idx := (Bits log_nregs).
-
   Definition nregs : nat := Z.to_nat (2^log_nregs).
-  Notation state := (Vector.t (Bool * t_data) nregs).
+  Notation state := (state' t_data nregs).
   Definition State := type.reify'' state.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
@@ -480,5 +483,190 @@ Module csrFile. Section csrFile.
   |}.
 
 End csrFile. End csrFile.
+
+Module CPU.
+  Notation mword := (Bits 32).
+
+  Inductive mem_type :=
+  | IMEM
+  | DMEM
+  | MMIO.
+
+  Record Cpu {var} (t_mem_req t_mem_resp: type) (t_state: type) := {
+    enqResp : mem_type -> fn var (Pair t_state t_mem_resp) t_state;
+    deqReq : mem_type -> fn var t_state t_state;
+    setInterrupt : fn var (Pair t_state (Pair Bool mword)) t_state; 
+    tick : fn var t_state t_state;
+    canEnqResp : mem_type -> fn var t_state Bool;
+    canDeqReq : mem_type -> fn var t_state Bool;
+    peek : mem_type -> fn var t_state t_mem_req
+  }.
+
+End CPU. Notation Cpu := CPU.Cpu (only parsing).
+
+Module cpu. 
+  Notation width := 32.
+  Notation mword := (Bits width).
+  Section cpuTypes.
+    Record mem_req_t := { mem_req_is_store : Bool; 
+                          mem_req_addr : mword;
+                          mem_req_data : mword }.
+    Definition Mem_req_t := type.reify'' mem_req_t.
+
+    Record mem_resp_t := { mem_resp_is_store : Bool; 
+
+                           mem_resp_addr : mword }.
+    Definition Mem_resp_t := type.reify'' mem_resp_t.
+
+    Record f2d_bookkeeping :=
+      { f2d_pc : mword;
+        f2d_ppc : mword;
+        f2d_epoch : Bool;
+        f2d_depoch: Bool;
+        f2d_iepoch: Bool;
+      }.
+    Definition F2d_bookkeeping := type.reify'' f2d_bookkeeping.
+
+    Record d2e_bookkeeping :=
+      { d2e_rval1 : mword;
+        d2e_rval2 : mword;
+        d2e_csr: mword;
+        d2e_pc : mword;
+        d2e_ppc : mword;
+        d2e_epoch : Bool;
+        d2e_iepoch : Bool;
+        d2e_inst : mword
+      }.
+    Definition D2e_bookkeeping := type.reify'' d2e_bookkeeping.
+
+    Record e2w_bookkeeping :=
+      { e2w_alu : mword;
+        e2w_csr : mword;
+        e2w_inst : mword;
+        e2w_exnInfo : (Bool * mword * mword * mword);
+        e2w_isMMIO : Bool;
+        e2w_nextPc : mword (* for interrupts *)
+      }.
+    Definition E2w_bookkeeping := type.reify'' e2w_bookkeeping.
+
+  End cpuTypes.
+
+  Coercion mem_req_rep (v : mem_req_t) : type.reify'' mem_req_t :=
+    ltac2:(let t := struct.rep &v in exact $t).
+
+  Section cpu.
+    Context {mul_LogNSteps: Z}.
+    Context {bht_idxSz: Z}.
+    Context {btb_tagSz: Z}.
+    Context {btb_idxSz: Z}.
+
+    Definition log_nregs : Z := 5.
+    Definition nregs : nat := Z.to_nat (2^log_nregs).
+    Record state : Type :=
+    { Pc : mword
+    ; Epoch : Bool
+    ; Depoch: Bool
+    ; Iepoch: Bool
+    ; Rf: rfScored.state' mword nregs
+    ; Csrs : csrFile.State
+    ; ToIMem: fifo1.State Mem_req_t (* TODO: reify fifo1.state *)
+    ; ToDMem: fifo1.State Mem_req_t
+    ; ToMMIO: fifo1.State Mem_req_t
+    ; FromIMem: fifo1.State Mem_resp_t
+    ; FromDMem: fifo1.State Mem_resp_t
+    ; FromMMIO: fifo1.State Mem_resp_t
+    ; F2d : fifo1.State F2d_bookkeeping
+    ; D2e : fifo1.State D2e_bookkeeping
+    ; E2w : fifo1.State E2w_bookkeeping
+    ; Mul : multiplier.State width mul_LogNSteps
+    ; Mip : Bool
+    ; InterruptSrc : mword
+    ; Bht : @bht.State bht_idxSz
+    ; Btb : @btb.State width btb_tagSz btb_idxSz
+    }. 
+
+    Definition State := type.reify'' state.
+    Coercion rep (v : state) : type.reify'' state :=
+     ltac2:(let t := struct.rep &v in exact $t).
+
+    Import (notations) eexpr expr. Local Open Scope string_scope.
+    Notation "'zero_struct' t" := (expr.Const (type.default t))
+      (in custom quartz_expr at level 0, t constr at level 0).
+
+    Declare Custom Entry quartz_struct_init.
+
+    Notation "f ':=' v" :=
+     (fun r =>
+       quartz_eexpr:(
+         let s <- $r..f = $v in
+         return #s
+       ))
+     (in custom quartz_struct_init at level 0,
+      f global,
+      v custom quartz_expr at level 200).
+    Notation "a ';' b" :=
+     (fun s =>
+       eexpr.Bind "StructInit" (a s) (fun s' => b (expr.Var s')))
+     (in custom quartz_struct_init at level 91,
+      right associativity,
+      a custom quartz_struct_init,
+      b custom quartz_struct_init).
+    Notation "'init_struct' t '{' fields '}'" :=
+     (fields (expr.Const (type.default t)))
+     (in custom quartz_eexpr at level 200,
+      t constr at level 0,
+      fields custom quartz_struct_init at level 92).
+    Notation "'init_struct' t '{' '}'" :=
+     (quartz_eexpr:(return $(expr.Const (type.default t))))
+     (in custom quartz_eexpr at level 200,
+      t constr at level 0).
+
+    Notation fifo1_full := (Fifo.full _ _ (fifo1.impl _)).
+    Notation fifo1_empty := (Fifo.empty _ _ (fifo1.impl _)).
+    Notation fifo1_enq := (Fifo.enq _ _ (fifo1.impl _)).
+    Notation btb_update := (Btb.update _ (btb.impl)).  
+    Notation btb_predPc := (Btb.predPc _ (btb.impl)).  
+
+    Let struct_test {var} := Fn (fun (st : var State) => quartz_eexpr:(
+        let pc := #st..Pc in 
+        let req <- init_struct Mem_req_t {
+          mem_req_is_store := true;
+          mem_req_addr := #pc
+        } in
+        return #req )).
+
+
+    Lemma struct_test_ok (st : state) :
+      fn.interp struct_test st = {| mem_req_is_store := true; 
+                                    mem_req_addr := st.(Pc);
+                                    mem_req_data := Zmod.zero |}.
+    Proof.
+      reflexivity.
+    Qed.
+                                                                   
+    Let fetch {var} := Fn (fun (st : var State) => quartz_eexpr:(
+      let toIMem_full := fifo1_full (#st..ToIMem) in 
+      let f2d_full := fifo1_full (#st..F2d) in 
+      if #toIMem_full | #f2d_full then
+        return #st 
+      else
+        let pc := #st..Pc in 
+        let epoch := #st
+                       ..Epoch in 
+        let depoch := #st..Depoch in 
+        let iedepoch := #st..Iepoch in 
+        let ppc := btb_predPc ((#st..Btb, #pc)) in 
+        let st <- #st..Pc = #ppc in 
+        let req <- init_struct Mem_req_t {
+          mem_req_is_store := false;
+          mem_req_addr := #pc;
+          mem_req_data := _ 'd 0
+        } in
+        return #st 
+    )).
+    (* TODO: enum type *)
+
+  End cpu.
+End cpu.
 
 End InterfaceExample.
