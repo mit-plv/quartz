@@ -22,7 +22,39 @@ Module QStdlib.
     let shift_amt : Bits n := _ 'd s in
     let shifted_b := #b >> #shift_amt in    
     return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))).
-  
+
+  Declare Custom Entry quartz_struct_init.
+  Notation "'zero_struct' t" := (expr.Const (type.default t))
+    (in custom quartz_expr at level 0, t constr at level 0).
+
+  Notation "f ':=' v" :=
+   (fun r =>
+     quartz_eexpr:(
+       let s <- $r..f = $v in
+       return #s
+     ))
+   (in custom quartz_struct_init at level 0,
+    f global,
+    v custom quartz_expr at level 200).
+  Notation "a ';' b" :=
+   (fun s =>
+     eexpr.Bind "StructInit" (a s) (fun s' => b (expr.Var s')))
+   (in custom quartz_struct_init at level 91,
+    right associativity,
+    a custom quartz_struct_init,
+    b custom quartz_struct_init).
+  Notation "'init_struct' t '{' fields '}'" :=
+   (fields (expr.Const (type.default t)))
+   (in custom quartz_eexpr at level 200,
+    t constr at level 0,
+    fields custom quartz_struct_init at level 92).
+  Notation "'init_struct' t '{' '}'" :=
+   (quartz_eexpr:(return $(expr.Const (type.default t))))
+   (in custom quartz_eexpr at level 200,
+    t constr at level 0).
+
+  Module StructTest.
+  End StructTest.
 End QStdlib.
 
 Module Fifo.
@@ -590,36 +622,8 @@ Module cpu.
      ltac2:(let t := struct.rep &v in exact $t).
 
     Import (notations) eexpr expr. Local Open Scope string_scope.
-    Notation "'zero_struct' t" := (expr.Const (type.default t))
-      (in custom quartz_expr at level 0, t constr at level 0).
+    Import QStdlib.
 
-    Declare Custom Entry quartz_struct_init.
-
-    Notation "f ':=' v" :=
-     (fun r =>
-       quartz_eexpr:(
-         let s <- $r..f = $v in
-         return #s
-       ))
-     (in custom quartz_struct_init at level 0,
-      f global,
-      v custom quartz_expr at level 200).
-    Notation "a ';' b" :=
-     (fun s =>
-       eexpr.Bind "StructInit" (a s) (fun s' => b (expr.Var s')))
-     (in custom quartz_struct_init at level 91,
-      right associativity,
-      a custom quartz_struct_init,
-      b custom quartz_struct_init).
-    Notation "'init_struct' t '{' fields '}'" :=
-     (fields (expr.Const (type.default t)))
-     (in custom quartz_eexpr at level 200,
-      t constr at level 0,
-      fields custom quartz_struct_init at level 92).
-    Notation "'init_struct' t '{' '}'" :=
-     (quartz_eexpr:(return $(expr.Const (type.default t))))
-     (in custom quartz_eexpr at level 200,
-      t constr at level 0).
 
     Notation fifo1_full := (Fifo.full _ _ (fifo1.impl _)).
     Notation fifo1_empty := (Fifo.empty _ _ (fifo1.impl _)).
@@ -650,21 +654,24 @@ Module cpu.
       if #toIMem_full | #f2d_full then
         return #st 
       else
-        let pc := #st..Pc in 
-        let epoch := #st
-                       ..Epoch in 
-        let depoch := #st..Depoch in 
-        let iedepoch := #st..Iepoch in 
-        let ppc := btb_predPc ((#st..Btb, #pc)) in 
-        let st <- #st..Pc = #ppc in 
-        let req <- init_struct Mem_req_t {
-          mem_req_is_store := false;
-          mem_req_addr := #pc;
+        let ppc := btb_predPc ((#st..Btb, #st..Pc)) in 
+        let imem_req <- init_struct Mem_req_t {
+          mem_req_is_store := false; (* load *)
+          mem_req_addr := #st..Pc;
           mem_req_data := _ 'd 0
         } in
+        let f2d_req <- init_struct F2d_bookkeeping {
+          f2d_pc := #st..Pc;
+          f2d_ppc := #ppc;
+          f2d_epoch := #st..Epoch;
+          f2d_depoch := #st..Depoch; 
+          f2d_iepoch := #st..Iepoch
+        } in                          
+        let st <- #st..Pc = #ppc in 
+        let st <- #st..ToIMem = fifo1_enq((#st..ToIMem, #imem_req)) in
+        let st <- #st..F2d = fifo1_enq((#st..F2d, #f2d_req)) in
         return #st 
     )).
-    (* TODO: enum type *)
 
   End cpu.
 End cpu.
