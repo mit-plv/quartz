@@ -24,8 +24,6 @@ Module QStdlib.
     return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))).
 
   Declare Custom Entry quartz_struct_init.
-  Notation "'zero_struct' t" := (expr.Const (type.default t))
-    (in custom quartz_expr at level 0, t constr at level 0).
 
   Notation "f ':=' v" :=
    (fun r =>
@@ -516,6 +514,31 @@ Module csrFile. Section csrFile.
 
 End csrFile. End csrFile.
 
+Module Decode.
+  Notation CsrIdx := (Bits 12) (only parsing).
+  Notation mword := (Bits 32) (only parsing).
+
+  Record DecodeOutType := {
+    D_rs1Idx : Bits 5;
+    D_rs2Idx : Bits 5;
+    D_rdIdx : Bits 5;
+    D_csrIdx : CsrIdx;
+    D_imm : mword;
+    D_rdValid : Bool;
+    D_isSys : Bool;
+    D_isCtrl : Bool
+  }.
+
+  (* Class DecodeOutT (T : Type) := { *)
+  (*   decodeFields : T -> DecodeOutType *)
+  (* }. *)
+
+  (* Class IsaParams {DecodeOut : Type} := { *)
+  (*   decode : mword -> DecodeOut *)
+  (* }. *)
+End Decode.
+
+
 Module CPU.
   Notation mword := (Bits 32).
 
@@ -545,9 +568,8 @@ Module cpu.
                           mem_req_data : mword }.
     Definition Mem_req_t := type.reify'' mem_req_t.
 
-    Record mem_resp_t := { mem_resp_is_store : Bool; 
-
-                           mem_resp_addr : mword }.
+    Record mem_resp_t := { mem_resp_addr : mword ; 
+                           mem_resp_data : mword }.
     Definition Mem_resp_t := type.reify'' mem_resp_t.
 
     Record f2d_bookkeeping :=
@@ -628,6 +650,7 @@ Module cpu.
     Notation fifo1_full := (Fifo.full _ _ (fifo1.impl _)).
     Notation fifo1_empty := (Fifo.empty _ _ (fifo1.impl _)).
     Notation fifo1_enq := (Fifo.enq _ _ (fifo1.impl _)).
+    Notation fifo1_first := (Fifo.first _ _ (fifo1.impl _)).
     Notation btb_update := (Btb.update _ (btb.impl)).  
     Notation btb_predPc := (Btb.predPc _ (btb.impl)).  
 
@@ -649,14 +672,12 @@ Module cpu.
     Qed.
                                                                    
     Let fetch {var} := Fn (fun (st : var State) => quartz_eexpr:(
-      let toIMem_full := fifo1_full (#st..ToIMem) in 
-      let f2d_full := fifo1_full (#st..F2d) in 
-      if #toIMem_full | #f2d_full then
+      if (fifo1_full (#st..ToIMem)) | (fifo1_full (#st..F2d)) then
         return #st 
       else
         let ppc := btb_predPc ((#st..Btb, #st..Pc)) in 
         let imem_req <- init_struct Mem_req_t {
-          mem_req_is_store := false; (* load *)
+          mem_req_is_store := false;
           mem_req_addr := #st..Pc;
           mem_req_data := _ 'd 0
         } in
@@ -672,6 +693,84 @@ Module cpu.
         let st <- #st..F2d = fifo1_enq((#st..F2d, #f2d_req)) in
         return #st 
     )).
+
+    (* TODO: enum type *)
+
+    Let decode_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
+      if (fifo1_empty (#st..FromIMem)) | (fifo1_empty (#st..F2d)) then          
+        return #st (* Nothing to do *)
+      else 
+        let imem_resp := fifo1_first (#st..FromIMem) in
+        let f2d_book := fifo1_first (#st..F2d) in 
+        if (#f2d_book..f2d_epoch == #st..Epoch) &
+           (#f2d_book..f2d_depoch == #st..Depoch) &
+           (#f2d_book..f2d_iepoch == #st..Iepoch)
+        then 
+          return #st
+        else
+          return #st
+    )).
+
+      (* let fromIMem_empty := fifo1_empty (#st..FromIMem) in *)
+      (* let f2d_empty := fifo1_empty (#st..F2d) in *)
+      (* let d2e_full := fifo1_full (#st..D2e) in *)
+      (* let e2w_full := fifo1_full (#st..E2w) in *)
+      (* let f2d_book := fifo1_first (#st..F2d) in *)
+      (* let epoch := #st..Epoch in  *)
+      (* let depoch := #st..Depoch in  *)
+      (* let iepoch := #st..Iepoch in  *)
+      (* let inst := #imem_resp..mem_resp_data in *)
+      (* let D := decode params #inst in *)
+      (* let D_flds := decodeFields D in *)
+      (* if #fromIMem_empty | #f2d_empty then *)
+      (*   return false *)
+      (* else if bool_decide (#f2d_book..f2d_epoch = #epoch) && *)
+      (*         bool_decide (#f2d_book..f2d_depoch = #depoch) && *)
+      (*         bool_decide (#f2d_book..f2d_iepoch = #iepoch) then *)
+      (*   let rs1_idx := D_rs1Idx D_flds in *)
+      (*   let rs2_idx := D_rs2Idx D_flds in *)
+      (*   let rd_idx := D_rdIdx D_flds in *)
+      (*   let csr_idx := D_csrIdx D_flds in *)
+      (*   locked1 ← rf (RfScored.IsLocked rs1_idx); *)
+      (*   locked2 ← rf (RfScored.IsLocked rs2_idx); *)
+      (*   locked_rd ← rf (RfScored.IsLocked rd_idx); *)
+      (*   if d2e_full || (locked1 || locked2 || locked_rd) || (D_isSys D_flds && e2w_full) then *)
+      (*     return false *)
+      (*   else *)
+      (*     rs1 ← rf (RfScored.Read rs1_idx); *)
+      (*     rs2 ← rf (RfScored.Read rs2_idx); *)
+      (*     csr_val ← getCSR csr_idx; *)
+      (*     let imm := D_imm D_flds in  *)
+      (*     bht_ppcDP ← bht (BhtAPI.PpcDP (#f2d_book..f2d_pc) (bv_add (#f2d_book..f2d_pc) (bv_zero_extend _ imm))); *)
+      (*     let ppcDP := if D_isCtrl D_flds then bht_ppcDP else #f2d_book..f2d_ppc in *)
+      (*     let dbook := {| d2e_rval1 := rs1; *)
+      (*                     d2e_rval2 := rs2; *)
+      (*                     d2e_csr := csr_val; *)
+      (*                     d2e_pc := #f2d_book..f2d_pc; *)
+      (*                     d2e_ppc := ppcDP; *)
+      (*                     d2e_epoch := #f2d_book..f2d_epoch; *)
+      (*                     d2e_iepoch := #f2d_book..f2d_iepoch; *)
+      (*                     d2e_inst := #inst; *)
+      (*                  |} in *)
+      (*     f2d_ fifo1_deq;; *)
+      (*     fromIMem_ fifo1_deq;; *)
+      (*     d2e_ (fifo1_enq (#st..D2e, dbook));; *)
+      (*     let/prog _ := (if (bool_decide (ppcDP = #f2d_book..f2d_ppc)) then *)
+      (*                      pass *)
+      (*                    else *)
+      (*                      setPc ppcDP;; *)
+      (*                      setDepoch (negb #depoch);; *)
+      (*                      pass) in *)
+      (*     if D_rdValid D_flds then *)
+      (*       rf_ (RfScored.AcquireLock rd_idx);; *)
+      (*       return true *)
+      (*     else *)
+      (*       return true *)
+      (* else *)
+      (*   f2d_ fifo1_deq;; *)
+      (*   fromIMem_ fifo1_deq;; *)
+      (*   return false *)
+
 
   End cpu.
 End cpu.
