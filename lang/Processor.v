@@ -15,13 +15,29 @@ Import fn.
 Import type.
 Open Scope Z_scope.
 
+(* TODO: sum types? *)
+
 Module QStdlib.
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Definition ExtractBits {var} (n s l: Z) : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
+  Definition ExtractBits {var} {n} (s: Z) {l: Z} : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
     let shift_amt : Bits n := _ 'd s in
     let shifted_b := #b >> #shift_amt in    
     return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))).
+
+  (* Concatenate bitvectors, matching [bv_concat sz hi lo] semantics.
+     Result width is explicitly [sz] (typically [sz = hi_w + lo_w]).
+   *)
+  Definition Concat {var} {sz hi_w lo_w : Z}
+    : fn _ (type.Pair (Bits hi_w) (Bits lo_w)) (Bits sz) :=
+    Fn (fun p : var (type.Pair (Bits hi_w) (Bits lo_w)) => quartz_eexpr:(
+      let hi := #p .1 in
+      let lo := #p .2 in
+      let hi' : Bits sz := $(expr.Unop unop.UnsignedResize (expr.Var hi)) in
+      let lo' : Bits sz := $(expr.Unop unop.UnsignedResize (expr.Var lo)) in
+      let sh : Bits sz := _ 'd lo_w in
+      return ((#hi' << #sh) | #lo')
+    )).
 
   Declare Custom Entry quartz_struct_init.
 
@@ -50,6 +66,9 @@ Module QStdlib.
    (quartz_eexpr:(return $(expr.Const (type.default t))))
    (in custom quartz_eexpr at level 200,
     t constr at level 0).
+
+  Notation "'{' f '}' '(' e ')'" := (expr.Call f e)
+    (in custom quartz_expr at level 0, left associativity, f constr , e custom quartz_expr at level 200).
 
   Module StructTest.
   End StructTest.
@@ -246,7 +265,6 @@ Record RfScored (t_state t_data : type) := {
   isLocked : fn var (Pair t_state t_idx) Bool
 }.
 End RfScored. End RfScored. Notation RfScored := RfScored.RfScored (only parsing).
-
 Module rfScored. 
   (* TODO: non-record type *)
   Notation state' t_data nregs := (Vector.t (Bool * t_data) nregs).
@@ -413,7 +431,7 @@ Module btb. Section btb.
 
   Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     return #pc + (_ 'd 4))).
-
+  Import QStdlib.
   Let predPc {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Bits addrSz))) => quartz_eexpr:( 
     let st := #p .1 in let pc := #p .2 in 
     let index := getIndex (#pc) in
@@ -514,19 +532,238 @@ Module csrFile. Section csrFile.
 
 End csrFile. End csrFile.
 
-Module Decode.
+Module Decode. Section Decode.
+  Import QStdlib.
+  Import (notations) eexpr expr. Local Open Scope string_scope.
+
+
   Notation CsrIdx := (Bits 12) (only parsing).
   Notation mword := (Bits 32) (only parsing).
+  Notation RegIdx := (Bits 5) (only parsing).
 
-  Record DecodeOutType := {
-    D_rs1Idx : Bits 5;
-    D_rs2Idx : Bits 5;
-    D_rdIdx : Bits 5;
+  Notation ImmType := (Bits 3) (only parsing).
+  Definition Imm_none : ImmType := Zmod.of_Z _ 0.
+  Definition Imm_I : ImmType    := Zmod.of_Z _ 1.
+  Definition Imm_S : ImmType    := Zmod.of_Z _ 2.
+  Definition Imm_B : ImmType    := Zmod.of_Z _ 3.
+  Definition Imm_U : ImmType    := Zmod.of_Z _ 4.
+
+  Notation InstType := (Bits 3) (only parsing).
+  Definition Inst_Illegal : InstType := Zmod.of_Z _ 0.
+  Definition Inst_Store : InstType   := Zmod.of_Z _ 1.
+  Definition Inst_Load : InstType    := Zmod.of_Z _ 2.
+  Definition Inst_Mul : InstType     := Zmod.of_Z _ 3.
+  Definition Inst_Alu : InstType     := Zmod.of_Z _ 4.
+  Definition Inst_Ctrl : InstType    := Zmod.of_Z _ 5.
+  Definition Inst_System : InstType  := Zmod.of_Z _ 6.
+
+  Record instrProps :=
+  { rs1Valid : Bool;
+    rs2Valid : Bool;
+    rdValid : Bool;
+    itype : InstType; 
+    immediateType : ImmType;
+  }.
+  Definition InstrProps := type.reify'' instrProps.
+  Let Funct7 {var} : fn var (Bits 32) (Bits 7) := 
+      ExtractBits 25 .  
+  Let Funct3 {var} : fn var (Bits 32) (Bits 3) := 
+      ExtractBits 12 .  
+  Let Opcode {var} : fn var (Bits 32) (Bits 7) := 
+      ExtractBits 0 .  
+  Let Csr12 {var} : fn var (Bits 32) (Bits 12) :=
+      ExtractBits 20 .
+
+  (* Field extractors mirroring [griffin/isaSpec/IsaParams.v:getFields]. *)
+  Let Rs1Idx {var} : fn var (Bits 32) (Bits 5) :=
+    QStdlib.ExtractBits 15.
+  Let Rs2Idx {var} : fn var (Bits 32) (Bits 5) :=
+    QStdlib.ExtractBits 20.
+  Let RdIdx {var} : fn var (Bits 32) (Bits 5) :=
+    QStdlib.ExtractBits 7.
+
+
+  (* Immediate constructors (all sign-extended to 32 bits). *)
+  Let ImmI {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
+  let imm12 : Bits 12 := { ExtractBits 20} ( #inst ) in
+  return $(expr.Unop unop.SignedResize (expr.Var imm12))
+  )).
+
+  Let ImmS {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
+  let hi7 : Bits 7 := { ExtractBits 25 } ( #inst ) in
+  let lo5 : Bits 5 := { ExtractBits 7 } (#inst ) in
+  let imm12 : Bits 12 := Concat ((#hi7, #lo5)) in
+  return $(expr.Unop unop.SignedResize (expr.Var imm12))
+  )).
+
+  Let ImmB {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
+  let imm_bit31 : Bits 1 := { ExtractBits 31 } ( #inst ) in
+  let imm_bit7 : Bits 1 := { ExtractBits 7 } ( #inst ) in
+  let imm_bits25_6 : Bits 6 := { ExtractBits 25 } ( #inst ) in
+  let imm_bits8_4 : Bits 4 := { ExtractBits 8 } ( #inst ) in
+  let imm_bits12_11 : Bits 2 := QStdlib.Concat ((#imm_bit31, #imm_bit7)) in
+  let imm_bits10_1 : Bits 10 := QStdlib.Concat ((#imm_bits25_6, #imm_bits8_4)) in
+  let imm_bits12_1 : Bits 12 := QStdlib.Concat ((#imm_bits12_11, #imm_bits10_1)) in
+  let imm_bit0 : Bits 1 := _ 'd 0 in
+  let imm13 : Bits 13 := QStdlib.Concat ((#imm_bits12_1, #imm_bit0)) in
+  return $(expr.Unop unop.SignedResize (expr.Var imm13))
+  )).
+
+  Let ImmU {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
+  let u20 : Bits 20 := {ExtractBits 12} ( #inst ) in
+  let z12 : Bits 12 := _ 'd 0 in
+  let imm32 : Bits 32 := Concat ((#u20, #z12)) in
+  return #imm32
+  )).
+
+  Definition opcode_LOAD : Bits 7 := Zmod.of_Z _ 3.
+  Definition opcode_OP_IMM : Bits 7 := Zmod.of_Z _ 19.
+  Definition opcode_AUIPC : Bits 7 := Zmod.of_Z _ 23.
+  Definition opcode_STORE : Bits 7 := Zmod.of_Z _ 35.
+  Definition opcode_OP : Bits 7 := Zmod.of_Z _ 51.
+  Definition opcode_BRANCH : Bits 7 := Zmod.of_Z _ 99.
+  Definition opcode_JALR : Bits 7 := Zmod.of_Z _ 103.
+  Definition opcode_SYSTEM : Bits 7 := Zmod.of_Z _ 115.
+
+  Definition funct3_LW : Bits 3 := Zmod.of_Z _ 2.
+  Definition funct3_ADDI : Bits 3 := Zmod.of_Z _ 0.
+  Definition funct3_SW : Bits 3 := Zmod.of_Z _ 2.
+  Definition funct3_ADD : Bits 3 := Zmod.of_Z _ 0.
+  Definition funct7_ADD : Bits 7 := Zmod.of_Z _ 0.
+  Definition funct3_MUL : Bits 3 := Zmod.of_Z _ 0.
+  Definition funct7_MUL : Bits 7 := Zmod.of_Z _ 1.
+  Definition funct3_BEQ : Bits 3 := Zmod.of_Z _ 0.
+  Definition funct3_JALR : Bits 3 := Zmod.of_Z _ 0.
+  Definition funct3_CSRRW : Bits 3 := Zmod.of_Z _ 1.
+
+  Let getInstrProps {var} : fn var _ InstrProps := Fn (fun (inst: var mword) => quartz_eexpr:(
+    let opcode := Opcode ( #inst ) in
+    let funct3 := Funct3 ( #inst ) in
+    let funct7 := Funct7 ( #inst ) in
+    let csr12 := Csr12 ( #inst ) in
+    let illegal <- init_struct InstrProps { 
+                  rs1Valid := false;
+                  rs2Valid := false;
+                  rdValid := false;
+                  itype := const Inst_Illegal;
+                  immediateType := const Imm_none } in
+    let ret <- init_struct InstrProps { 
+                  rs1Valid := false;
+                  rs2Valid := false;
+                  rdValid := false;
+                  itype := const Inst_Illegal;
+                  immediateType := const Imm_none } in
+    (* LW: load *)
+    if (#opcode == const opcode_LOAD) & (#funct3 == const funct3_LW) then
+      let ret <- init_struct InstrProps { 
+                    rs1Valid := true;
+                    rs2Valid := false;
+                    rdValid := true;
+                    itype := const Inst_Load;
+                    immediateType := const Imm_I } in
+      return #ret
+    else 
+    (* ADDI: alu immediate *)
+    if (#opcode == const opcode_OP_IMM) & (#funct3 == const funct3_ADDI) then
+      let ret <- init_struct InstrProps { 
+                    rs1Valid := true;
+                    rs2Valid := false;
+                    rdValid := true;
+                    itype := const Inst_Alu;
+                    immediateType := const Imm_I } in
+      return #ret
+    else 
+    (* AUIPC *)
+    if #opcode == const opcode_AUIPC then
+      let ret <- init_struct InstrProps { 
+                    rs1Valid := false;
+                    rs2Valid := false;
+                    rdValid := true;
+                    itype := const Inst_Alu;
+                    immediateType := const Imm_U } in
+      return #ret
+    else 
+    (* SW: store *)
+    if (#opcode == const opcode_STORE) & (#funct3 == const funct3_SW) then
+      let ret <- init_struct InstrProps { 
+                    rs1Valid := true;
+                    rs2Valid := true;
+                    rdValid := false;
+                    itype := const Inst_Store;
+                    immediateType := const Imm_S } in
+      return #ret
+    else 
+    (* ADD: alu register *)
+    if (#opcode == const opcode_OP) & (#funct3 == const funct3_ADD) & (#funct7 == const funct7_ADD) then
+      let ret <- init_struct InstrProps { 
+                    rs1Valid := true;
+                    rs2Valid := true;
+                    rdValid := true;
+                    itype := const Inst_Alu;
+                    immediateType := const Imm_none } in
+      return #ret
+    else 
+    (* BEQ: branch *)
+    if (#opcode == const opcode_BRANCH) & (#funct3 == const funct3_BEQ) then
+      let ret <- init_struct InstrProps { 
+                    rs1Valid := true;
+                    rs2Valid := true;
+                    rdValid := false;
+                    itype := const Inst_Ctrl;
+                    immediateType := const Imm_B } in
+      return #ret
+    else 
+    (* JALR: jump and link register *)
+    if (#opcode == const opcode_JALR) & (#funct3 == const funct3_JALR) then
+      let ret <- init_struct InstrProps { 
+                    rs1Valid := true;
+                    rs2Valid := false;
+                    rdValid := true;
+                    itype := const Inst_Ctrl;
+                    immediateType := const Imm_I } in
+      return #ret
+    else 
+    (* MUL *)
+    if (#opcode == const opcode_OP) & (#funct3 == const funct3_MUL) & (#funct7 == const funct7_MUL) then
+      let ret <- init_struct InstrProps { 
+                    rs1Valid := true;
+                    rs2Valid := true;
+                    rdValid := true;
+                    itype := const Inst_Mul;
+                    immediateType := const Imm_none } in
+      return #ret
+    else 
+    (* CSRRW: system *)
+    if (#opcode == const opcode_SYSTEM) & (#funct3 == const funct3_CSRRW) then
+      let ret <- init_struct InstrProps { 
+                    rs1Valid := true;
+                    rs2Valid := false;
+                    rdValid := true;
+                    itype := const Inst_System;
+                    immediateType := const Imm_none } in
+      return #ret
+    else
+      return #illegal
+  )).
+
+  Record DecodeOut := {
+    D_rs1Idx : RegIdx;
+    D_rs2Idx : RegIdx;
+    D_rdIdx : RegIdx;
     D_csrIdx : CsrIdx;
     D_imm : mword;
+    D_rs1Valid : Bool;
+    D_rs2Valid : Bool;
     D_rdValid : Bool;
+    D_csrWriteValid : Bool;
+    D_isLegal : Bool;
+    D_inst : mword;
+    D_isMemory : Bool;
+    D_isLoad : Bool;
+    D_isMul : Bool;
     D_isSys : Bool;
-    D_isCtrl : Bool
+    D_isJalr : Bool;
+    D_isCtrl : Bool;
   }.
 
   (* Class DecodeOutT (T : Type) := { *)
@@ -536,6 +773,8 @@ Module Decode.
   (* Class IsaParams {DecodeOut : Type} := { *)
   (*   decode : mword -> DecodeOut *)
   (* }. *)
+End Decode.
+
 End Decode.
 
 
