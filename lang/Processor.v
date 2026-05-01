@@ -167,7 +167,8 @@ Module Multiplier.
 End Multiplier. Notation Multiplier:= Multiplier.Multiplier (only parsing).
 
 Module multiplier. Section multiplier.
-  Context (width : Z).
+  (* Context {width : Z}. *)
+  Notation width := 32.
   Context (logNSteps : Z).
 
   Record req_t := { input_a : Bits width; input_b : Bits width}.
@@ -257,7 +258,7 @@ Context {log_nregs: Z}.
 
 Notation t_idx := (Bits log_nregs).
   
-Record RfScored (t_state t_data : type) := {
+Record RfScored {t_state t_data : type} := {
   acquireLock : fn var (Pair t_state t_idx) t_state;
   releaseLock : fn var (Pair t_state t_idx) t_state;
   writeAndRelease : fn var (Pair t_state (type.Pair t_idx t_data)) t_state;
@@ -474,7 +475,7 @@ Module btb. Section btb.
 End btb. End btb.
 
 Module CsrFile.
-  Record CsrFile {var} {idxSz} {wordSz} (t_state: type) := {
+  Record CsrFile {var} {idxSz} {wordSz} {t_state: type} := {
     readCsr : fn var (Pair t_state (Bits idxSz)) (Bits wordSz);
     writeCsr : fn var (Pair t_state (Pair (Bits idxSz) (Bits wordSz))) t_state
   }.
@@ -565,8 +566,25 @@ Module Decode. Section Decode.
     immediateType : ImmType;
   }.
   Definition InstrProps := type.reify'' instrProps.
-  Let Funct7 {var} : fn var (Bits 32) (Bits 7) := 
-      ExtractBits 25 .  
+
+  Record decodeFields :=
+  { D_rs1Idx : RegIdx;
+    D_rs2Idx : RegIdx;
+    D_rdIdx  : RegIdx;
+    D_csrIdx : CsrIdx;
+    D_immI   : mword;
+    D_immS   : mword;
+    D_immB   : mword;
+    D_immU   : mword;
+    D_csr    : CsrIdx;
+    D_opcode : Bits 7;
+    D_funct3 : Bits 3;
+    D_funct7 : Bits 7;
+  }.
+  Definition DecodeFields := type.reify'' decodeFields.
+
+  Let Funct7 {var} : fn var (Bits 32) (Bits 7) :=
+      ExtractBits 25 .
   Let Funct3 {var} : fn var (Bits 32) (Bits 3) := 
       ExtractBits 12 .  
   Let Opcode {var} : fn var (Bits 32) (Bits 7) := 
@@ -616,6 +634,36 @@ Module Decode. Section Decode.
   return #imm32
   )).
 
+  (* Bundles all raw instruction fields; mirrors [griffin/isaSpec/IsaParams.v:getFields]. *)
+  Definition getFields {var} : fn var (Bits 32) DecodeFields := Fn (fun (inst: var mword) => quartz_eexpr:(
+    let rs1Idx := Rs1Idx ( #inst ) in
+    let rs2Idx := Rs2Idx ( #inst ) in
+    let rdIdx  := RdIdx  ( #inst ) in
+    let csrIdx := Csr12  ( #inst ) in
+    let immI   := ImmI   ( #inst ) in
+    let immS   := ImmS   ( #inst ) in
+    let immB   := ImmB   ( #inst ) in
+    let immU   := ImmU   ( #inst ) in
+    let opcode := Opcode ( #inst ) in
+    let funct3 := Funct3 ( #inst ) in
+    let funct7 := Funct7 ( #inst ) in
+    let ret <- init_struct DecodeFields {
+      D_rs1Idx := #rs1Idx;
+      D_rs2Idx := #rs2Idx;
+      D_rdIdx  := #rdIdx;
+      D_csrIdx := #csrIdx;
+      D_immI   := #immI;
+      D_immS   := #immS;
+      D_immB   := #immB;
+      D_immU   := #immU;
+      D_csr    := #csrIdx;
+      D_opcode := #opcode;
+      D_funct3 := #funct3;
+      D_funct7 := #funct7
+    } in
+    return #ret
+  )).
+
   Definition opcode_LOAD : Bits 7 := Zmod.of_Z _ 3.
   Definition opcode_OP_IMM : Bits 7 := Zmod.of_Z _ 19.
   Definition opcode_AUIPC : Bits 7 := Zmod.of_Z _ 23.
@@ -636,7 +684,7 @@ Module Decode. Section Decode.
   Definition funct3_JALR : Bits 3 := Zmod.of_Z _ 0.
   Definition funct3_CSRRW : Bits 3 := Zmod.of_Z _ 1.
 
-  Let getInstrProps {var} : fn var _ InstrProps := Fn (fun (inst: var mword) => quartz_eexpr:(
+  Definition getInstrProps {var} : fn var _ InstrProps := Fn (fun (inst: var mword) => quartz_eexpr:(
     let opcode := Opcode ( #inst ) in
     let funct3 := Funct3 ( #inst ) in
     let funct7 := Funct7 ( #inst ) in
@@ -655,116 +703,239 @@ Module Decode. Section Decode.
                   immediateType := const Imm_none } in
     (* LW: load *)
     if (#opcode == const opcode_LOAD) & (#funct3 == const funct3_LW) then
-      let ret <- init_struct InstrProps { 
+       init_struct InstrProps { 
                     rs1Valid := true;
                     rs2Valid := false;
                     rdValid := true;
                     itype := const Inst_Load;
-                    immediateType := const Imm_I } in
-      return #ret
+                    immediateType := const Imm_I } 
     else 
     (* ADDI: alu immediate *)
     if (#opcode == const opcode_OP_IMM) & (#funct3 == const funct3_ADDI) then
-      let ret <- init_struct InstrProps { 
+      init_struct InstrProps { 
                     rs1Valid := true;
                     rs2Valid := false;
                     rdValid := true;
                     itype := const Inst_Alu;
-                    immediateType := const Imm_I } in
-      return #ret
+                    immediateType := const Imm_I }
     else 
     (* AUIPC *)
     if #opcode == const opcode_AUIPC then
-      let ret <- init_struct InstrProps { 
+       init_struct InstrProps { 
                     rs1Valid := false;
                     rs2Valid := false;
                     rdValid := true;
                     itype := const Inst_Alu;
-                    immediateType := const Imm_U } in
-      return #ret
+                    immediateType := const Imm_U } 
     else 
     (* SW: store *)
     if (#opcode == const opcode_STORE) & (#funct3 == const funct3_SW) then
-      let ret <- init_struct InstrProps { 
+       init_struct InstrProps { 
                     rs1Valid := true;
                     rs2Valid := true;
                     rdValid := false;
                     itype := const Inst_Store;
-                    immediateType := const Imm_S } in
-      return #ret
+                    immediateType := const Imm_S }
     else 
     (* ADD: alu register *)
     if (#opcode == const opcode_OP) & (#funct3 == const funct3_ADD) & (#funct7 == const funct7_ADD) then
-      let ret <- init_struct InstrProps { 
+       init_struct InstrProps { 
                     rs1Valid := true;
                     rs2Valid := true;
                     rdValid := true;
                     itype := const Inst_Alu;
-                    immediateType := const Imm_none } in
-      return #ret
+                    immediateType := const Imm_none } 
     else 
     (* BEQ: branch *)
     if (#opcode == const opcode_BRANCH) & (#funct3 == const funct3_BEQ) then
-      let ret <- init_struct InstrProps { 
+       init_struct InstrProps { 
                     rs1Valid := true;
                     rs2Valid := true;
                     rdValid := false;
                     itype := const Inst_Ctrl;
-                    immediateType := const Imm_B } in
-      return #ret
+                    immediateType := const Imm_B }
     else 
     (* JALR: jump and link register *)
     if (#opcode == const opcode_JALR) & (#funct3 == const funct3_JALR) then
-      let ret <- init_struct InstrProps { 
+       init_struct InstrProps { 
                     rs1Valid := true;
                     rs2Valid := false;
                     rdValid := true;
                     itype := const Inst_Ctrl;
-                    immediateType := const Imm_I } in
-      return #ret
+                    immediateType := const Imm_I }
     else 
     (* MUL *)
     if (#opcode == const opcode_OP) & (#funct3 == const funct3_MUL) & (#funct7 == const funct7_MUL) then
-      let ret <- init_struct InstrProps { 
+      init_struct InstrProps { 
                     rs1Valid := true;
                     rs2Valid := true;
                     rdValid := true;
                     itype := const Inst_Mul;
-                    immediateType := const Imm_none } in
-      return #ret
+                    immediateType := const Imm_none }
     else 
     (* CSRRW: system *)
     if (#opcode == const opcode_SYSTEM) & (#funct3 == const funct3_CSRRW) then
-      let ret <- init_struct InstrProps { 
+      init_struct InstrProps { 
                     rs1Valid := true;
                     rs2Valid := false;
                     rdValid := true;
                     itype := const Inst_System;
-                    immediateType := const Imm_none } in
-      return #ret
+                    immediateType := const Imm_none }
     else
       return #illegal
   )).
 
-  Record DecodeOut := {
-    D_rs1Idx : RegIdx;
-    D_rs2Idx : RegIdx;
-    D_rdIdx : RegIdx;
-    D_csrIdx : CsrIdx;
-    D_imm : mword;
-    D_rs1Valid : Bool;
-    D_rs2Valid : Bool;
-    D_rdValid : Bool;
-    D_csrWriteValid : Bool;
-    D_isLegal : Bool;
-    D_inst : mword;
-    D_isMemory : Bool;
-    D_isLoad : Bool;
-    D_isMul : Bool;
-    D_isSys : Bool;
-    D_isJalr : Bool;
-    D_isCtrl : Bool;
+  Definition getImm {var} : fn var _ mword := Fn (fun (p: var (Pair DecodeFields InstrProps)) => quartz_eexpr:(
+    let flds := #p.1 in let props := #p.2 in 
+    if (#props..immediateType == const Imm_I) then return #flds..D_immI
+    else if (#props..immediateType == const Imm_S) then return #flds..D_immS
+    else if (#props..immediateType == const Imm_B) then return #flds..D_immB
+    else if (#props..immediateType == const Imm_U) then return #flds..D_immU
+    else return _ 'd 0)).
+
+  Record aluInput :=
+  { alu_in_flds: DecodeFields;
+    alu_in_props : InstrProps;
+    alu_in_rs1val : mword;
+    alu_in_rs2val: mword;
+    alu_in_csrval : mword;
+    alu_in_pc : mword
   }.
+  Definition AluInput := type.reify'' aluInput.
+
+  Record aluOutput :=
+  { alu_out_reg : mword;
+    alu_out_csr : mword
+  }.
+  Definition AluOutput := type.reify'' aluOutput.
+
+  Definition execALU {var} : fn var _ AluOutput := 
+    Fn (fun (p: var AluInput) => quartz_eexpr:(
+      let imm := getImm ((#p..alu_in_flds, #p..alu_in_props)) in 
+      if (#p..alu_in_flds..D_opcode == const opcode_AUIPC) then
+        init_struct AluOutput { alu_out_reg := #p..alu_in_pc + #imm;
+                                          alu_out_csr := _ 'd 0 } 
+      else if (#p..alu_in_flds..D_opcode == const opcode_SYSTEM) then
+        init_struct AluOutput { alu_out_reg := #p..alu_in_csrval;
+                                          alu_out_csr := #p..alu_in_rs1val }
+      else 
+        let alu_src1 := #p..alu_in_rs1val in 
+        let alu_src2 := if (#p..alu_in_props..immediateType == const Imm_none) then
+                          #p..alu_in_rs2val
+                        else #imm in
+        init_struct AluOutput { alu_out_reg := #alu_src1 + #alu_src2;
+                                          alu_out_csr := _ 'd 0}
+   )).
+
+  Definition nextPc {var} : fn var _ mword := Fn (fun (p: var mword) => 
+                                             quartz_eexpr:(return #p + _ 'd 4)). 
+  Let is_word_aligned {var} : fn var _ Bool := Fn (fun (addr: var mword) => quartz_eexpr:(
+    return (#addr & (_ 'd 3)) == _ 'd 0)).
+
+  Definition EXN_InstructionAddressMisaligned : mword := Zmod.of_Z _ 0.
+  Definition EXN_IllegalInstruction : mword := Zmod.of_Z _ 2.
+  Definition EXN_LoadAddressMisaligned : mword := Zmod.of_Z _ 4.
+  Definition EXN_StoreAddressMisaligned : mword := Zmod.of_Z _ 6.
+
+  Record ctrlInput :=
+  { ctrl_in_flds: DecodeFields;
+    ctrl_in_props : InstrProps;
+    ctrl_in_pc : mword;
+    ctrl_in_rs1val : mword;
+    ctrl_in_rs2val: mword;
+  }.
+  Definition CtrlInput := type.reify'' ctrlInput.
+
+  Record ctrlOutput :=
+  { ctrl_out_taken : Bool;
+    ctrl_out_pc : mword;
+    ctrl_out_isExn : Bool;
+    ctrl_out_exnCode : mword;
+    ctrl_out_mtval: mword
+  }.
+  Definition CtrlOutput := type.reify'' ctrlOutput.
+
+  Definition execControl {var} 
+    : fn var _ CtrlOutput := Fn (fun (p: var CtrlInput) => quartz_eexpr:(
+      let flds := #p..ctrl_in_flds in 
+      let props := #p..ctrl_in_props in
+      let pc := #p..ctrl_in_pc in
+      let rs1val := #p..ctrl_in_rs1val in
+      let rs2val := #p..ctrl_in_rs2val in
+      let imm := getImm ((#flds, #props)) in 
+        let isJalr := ((#flds..D_opcode == const opcode_JALR) 
+                     & (#flds..D_funct3 == const funct3_JALR)) in 
+      if (#props..itype == const Inst_Ctrl) then
+        if #isJalr then
+          let nextPC := (#rs1val + #imm) & (~ (_ 'd 1)) in 
+          let isAligned := is_word_aligned (#nextPC) in 
+          init_struct CtrlOutput { ctrl_out_taken := true;
+                                   ctrl_out_pc := #nextPC;
+                                   ctrl_out_isExn := ~#isAligned;
+                                   ctrl_out_exnCode := const EXN_InstructionAddressMisaligned;
+                                   ctrl_out_mtval := #nextPC }
+        else (* BEQ *)
+          let taken := (#rs1val == #rs2val) in 
+          let nextPC := #pc + #imm in 
+          let isAligned := is_word_aligned (#nextPC) in 
+          init_struct CtrlOutput { ctrl_out_taken := #taken;
+                                   ctrl_out_pc := (if #taken then #nextPC else nextPc (#pc));
+                                   ctrl_out_isExn := ~#isAligned;
+                                   ctrl_out_exnCode := const EXN_InstructionAddressMisaligned;
+                                   ctrl_out_mtval := #nextPC}
+      else
+          init_struct CtrlOutput { ctrl_out_taken := false;
+                                   ctrl_out_pc := nextPc (#pc);
+                                   ctrl_out_isExn := false;
+                                   ctrl_out_exnCode := _ 'd 0;
+                                   ctrl_out_mtval := _ 'd 0}
+    )).
+
+  Record memAddrOutput :=
+  { memAddrOut_addr : mword;
+    memAddrOut_isExn : Bool;
+    memAddrOut_exnCode : mword;
+    memAddrOut_mtval : mword 
+  }.
+  Definition MemAddrOutput := type.reify'' memAddrOutput.
+
+  Definition memAddr {var} : fn var _ MemAddrOutput :=
+    Fn (fun (p: var (Pair (Pair DecodeFields InstrProps) mword)) => quartz_eexpr:(
+      let flds := #p.1.1 in
+      let props := #p.1.2 in 
+      let rs1val := #p.2 in 
+      let imm := getImm ((#flds, #props)) in 
+      if ((#props..itype == const Inst_Store) | (#props..itype == const Inst_Load)) then
+         let addr  := #rs1val + #imm in 
+         let isAligned := is_word_aligned (#addr) in
+         let exnCode := if (#props..itype == const Inst_Store) then
+                          const EXN_StoreAddressMisaligned
+                        else const EXN_LoadAddressMisaligned in 
+         init_struct MemAddrOutput { memAddrOut_addr := #addr;
+                                     memAddrOut_isExn := ~#isAligned;
+                                     memAddrOut_exnCode := #exnCode;
+                                     memAddrOut_mtval := #addr }
+      else 
+         init_struct MemAddrOutput { memAddrOut_addr := _ 'd 0;
+                                     memAddrOut_isExn := false;
+                                     memAddrOut_exnCode := _ 'd 0;
+                                     memAddrOut_mtval := _ 'd 0}
+    )).
+      
+  (* Record decodeOut := { *)
+  (*   D_inst : mword; *)
+  (*   D_flds : InstrProps; *)
+  (* }. *)
+  (* Definition DecodeOut := type.reify'' decodeOut. *)
+
+  (* Let decode {var} : fn var (Bits 32) DecodeOut := Fn (fun (inst: var mword) => quartz_eexpr:( *)
+  (*   let flds := getInstrProps ( #inst ) in *)
+  (*   let ret <- init_struct DecodeOut { *)
+  (*     D_inst := #inst; *)
+  (*     D_flds := #flds *)
+  (*   } in *)
+  (*   return #ret *)
+  (* )). *)
 
   (* Class DecodeOutT (T : Type) := { *)
   (*   decodeFields : T -> DecodeOutType *)
@@ -773,9 +944,7 @@ Module Decode. Section Decode.
   (* Class IsaParams {DecodeOut : Type} := { *)
   (*   decode : mword -> DecodeOut *)
   (* }. *)
-End Decode.
-
-End Decode.
+End Decode. End Decode.
 
 
 Module CPU.
@@ -852,6 +1021,7 @@ Module cpu.
     Context {bht_idxSz: Z}.
     Context {btb_tagSz: Z}.
     Context {btb_idxSz: Z}.
+    Parameter (isMMIOAddr : forall {var}, fn var mword Bool).
 
     Definition log_nregs : Z := 5.
     Definition nregs : nat := Z.to_nat (2^log_nregs).
@@ -871,7 +1041,7 @@ Module cpu.
     ; F2d : fifo1.State F2d_bookkeeping
     ; D2e : fifo1.State D2e_bookkeeping
     ; E2w : fifo1.State E2w_bookkeeping
-    ; Mul : multiplier.State width mul_LogNSteps
+    ; Mul : @multiplier.State mul_LogNSteps
     ; Mip : Bool
     ; InterruptSrc : mword
     ; Bht : @bht.State bht_idxSz
@@ -890,8 +1060,18 @@ Module cpu.
     Notation fifo1_empty := (Fifo.empty _ _ (fifo1.impl _)).
     Notation fifo1_enq := (Fifo.enq _ _ (fifo1.impl _)).
     Notation fifo1_first := (Fifo.first _ _ (fifo1.impl _)).
+    Notation fifo1_deq := (Fifo.deq _ _ (fifo1.impl _)).
     Notation btb_update := (Btb.update _ (btb.impl)).  
     Notation btb_predPc := (Btb.predPc _ (btb.impl)).  
+    Notation rf_isLocked := (RfScored.isLocked (rfScored.impl _ )).
+    Notation rf_read := (RfScored.read (rfScored.impl _)).
+    Notation rf_acquire := (RfScored.acquireLock (rfScored.impl _)).
+    Notation rf_release := (RfScored.releaseLock (rfScored.impl _)).
+    Notation csr_read := (CsrFile.readCsr (csrFile.impl)).
+    Notation bht_update := (Bht.update _ (bht.impl)).  
+    Notation bht_ppcDp := (Bht.ppcDp _ (bht.impl)).
+    Notation mul_full := (Multiplier.full _ (multiplier.impl mul_LogNSteps)).
+    Notation mul_enq := (Multiplier.enq _ (multiplier.impl mul_LogNSteps)).
 
     Let struct_test {var} := Fn (fun (st : var State) => quartz_eexpr:(
         let pc := #st..Pc in 
@@ -934,82 +1114,211 @@ Module cpu.
     )).
 
     (* TODO: enum type *)
+    Import Decode.
 
     Let decode_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
-      if (fifo1_empty (#st..FromIMem)) | (fifo1_empty (#st..F2d)) then          
-        return #st (* Nothing to do *)
-      else 
+      if (fifo1_empty (#st..FromIMem)) | (fifo1_empty (#st..F2d)) then
+        return #st
+      else
         let imem_resp := fifo1_first (#st..FromIMem) in
-        let f2d_book := fifo1_first (#st..F2d) in 
+        let f2d_book := fifo1_first (#st..F2d) in
+        let inst := #imem_resp..mem_resp_data in
+        let flds := getFields (#inst) in
+        let props := getInstrProps (#inst) in
         if (#f2d_book..f2d_epoch == #st..Epoch) &
            (#f2d_book..f2d_depoch == #st..Depoch) &
            (#f2d_book..f2d_iepoch == #st..Iepoch)
-        then 
+        then
+          let rs1_idx := #flds..D_rs1Idx in
+          let rs2_idx := #flds..D_rs2Idx in
+          let rd_idx := #flds..D_rdIdx in
+          let locked1 := rf_isLocked ((#st..Rf, #rs1_idx)) in
+          let locked2 := rf_isLocked ((#st..Rf, #rs2_idx)) in
+          let locked_rd := rf_isLocked ((#st..Rf, #rd_idx)) in
+          let d2e_full := fifo1_full (#st..D2e) in
+          let e2w_full := fifo1_full (#st..E2w) in
+          let is_sys := (#props..itype == const Inst_System) in
+          if #d2e_full | (#locked1 | #locked2 | #locked_rd) | (#is_sys & #e2w_full) then
+            return #st (* stall *) 
+          else
+            let rs1 := rf_read ((#st..Rf, #rs1_idx)) in
+            let rs2 := rf_read ((#st..Rf, #rs2_idx)) in
+            let csr_val := csr_read ((#st..Csrs, #flds..D_csrIdx)) in
+            let imm := getImm ((#flds, #props)) in 
+            let ppcDP := if (#props..itype == const Inst_Ctrl) then
+                           bht_ppcDp ((#st..Bht, (#f2d_book..f2d_pc, #f2d_book..f2d_pc + #imm)))
+                         else #f2d_book..f2d_ppc in
+            let dbook <- init_struct D2e_bookkeeping {
+              d2e_rval1 := #rs1;
+              d2e_rval2 := #rs2;
+              d2e_csr := #csr_val;
+              d2e_pc := #f2d_book..f2d_pc;
+              d2e_ppc := #ppcDP;
+              d2e_epoch := #f2d_book..f2d_epoch;
+              d2e_iepoch := #f2d_book..f2d_iepoch;
+              d2e_inst := #inst
+            } in
+            let st <- #st..F2d = (fifo1_deq (#st..F2d)) in
+            let st <- #st..FromIMem = (fifo1_deq (#st..FromIMem)) in
+            let st <- #st..D2e = fifo1_enq((#st..D2e, #dbook)) in
+            let st <- if (#ppcDP == #f2d_book..f2d_ppc) then
+                       return #st
+                     else 
+                       let st <- #st..Pc = #ppcDP in 
+                       let st <- #st..Depoch = ~#st..Depoch in 
+                       return #st in 
+            if #props..rdValid then
+              let st <- #st..Rf = rf_acquire ((#st..Rf, #rd_idx)) in 
+              return #st
+            else
+              return #st
+        else 
+          let st <- #st..F2d = (fifo1_deq (#st..F2d)) in
+          let st <- #st..FromIMem = (fifo1_deq (#st..FromIMem)) in
+          return #st
+     )).
+
+    
+    Let e2w_exn {var} : fn var _ E2w_bookkeeping := 
+          Fn (fun (p: var (Pair mword (Pair mword (Pair mword mword)))) => quartz_eexpr:(
+      let inst := #p.1 in
+      let exnCode := #p.2.1 in 
+      let exnMtval := #p.2.2.1 in
+      let mepc := #p.2.2.2 in
+      init_struct E2w_bookkeeping { 
+                            e2w_alu := _ 'd 0;
+                            e2w_csr := _ 'd 0;
+                            e2w_exnInfo := (true, #exnCode, #exnMtval, #mepc);
+                            e2w_inst := #inst;
+                            e2w_isMMIO := false;
+                            e2w_nextPc := _ 'd 0 })).
+
+    Let execute_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
+      let dbook := fifo1_first (#st..D2e) in
+      let inst := #dbook..d2e_inst in
+      let _pc := #dbook..d2e_pc in 
+      let flds := getFields (#inst) in
+      let props := getInstrProps (#inst) in
+      if fifo1_empty (#st..D2e) then
+        return #st (* stall; nothing to do *)
+      else if ((#dbook..d2e_epoch == #st..Epoch) &  
+               (#dbook..d2e_iepoch == #st..Iepoch)) then
+        let rval1 := #dbook..d2e_rval1 in
+        let rval2 := #dbook..d2e_rval2 in
+        let csr_val := #dbook..d2e_csr in
+        let alu_in <- init_struct AluInput { alu_in_flds := #flds;
+                                            alu_in_props := #props;
+                                            alu_in_rs1val := #rval1;
+                                            alu_in_rs2val := #rval2;
+                                            alu_in_csrval := #csr_val;
+                                            alu_in_pc := #_pc
+                                          } in 
+        let alu_csr_out := execALU (#alu_in) in 
+        let ctrl_in <- init_struct CtrlInput { ctrl_in_flds := #flds;
+                                              ctrl_in_props := #props;
+                                              ctrl_in_pc := #_pc;
+                                              ctrl_in_rs1val := #rval1;
+                                              ctrl_in_rs2val := #rval2
+                                            } in 
+        let ctrl_out := execControl (#ctrl_in) in 
+        let nextPC := #ctrl_out..ctrl_out_pc in 
+        if fifo1_full (#st..E2w) | 
+           ((#props..itype == const Inst_Mul) & mul_full (#st..Mul)) then
+          return #st (* stall *)
+        else
+          let St_ExBook_IsExn <-
+            if (#props..itype == const Inst_Illegal) then 
+              if ( (#props..itype == const Inst_Store) 
+                 | (#props..itype == const Inst_Load)) then (* isMem *)
+                let memOut := memAddr (((#flds, #props), #rval1)) in 
+                let addr := #memOut..memAddrOut_addr in 
+                let req <- init_struct Mem_req_t { 
+                              mem_req_is_store := ~(#props..itype == const Inst_Load); 
+                              mem_req_addr := #addr ;
+                              mem_req_data := if (#props..itype == const Inst_Load) then
+                                                _ 'd 0
+                                              else #rval2
+                          } in 
+                let e2w <- init_struct E2w_bookkeeping {
+                            e2w_alu := _ 'd 0;
+                            e2w_csr := _ 'd 0;
+                            e2w_exnInfo := (#memOut..memAddrOut_isExn, 
+                                            #memOut..memAddrOut_exnCode,
+                                            #memOut..memAddrOut_mtval, 
+                                            #_pc);
+                            e2w_inst := #inst;
+                            e2w_isMMIO := ~#memOut..memAddrOut_isExn & isMMIOAddr(#addr);
+                            e2w_nextPc := #nextPC } in
+                if #memOut..memAddrOut_isExn then
+                  return (#st, (#e2w, true))
+                else if isMMIOAddr(#addr) then
+                  let st <- #st..ToMMIO = fifo1_enq((#st..ToMMIO, #req)) in 
+                  return (#st, (#e2w, false))
+                else 
+                  let st <- #st..ToDMem = fifo1_enq((#st..ToDMem , #req)) in 
+                  return (#st, (#e2w, false))
+              else if (#props..itype == const Inst_Mul) then 
+                let req <- init_struct multiplier.Req { multiplier.input_a := #rval1;
+                                                       multiplier.input_b := #rval2
+                                                     } in
+                let st <- #st..Mul = mul_enq ((#st..Mul, #req)) in
+                let e2w <- init_struct E2w_bookkeeping {
+                            e2w_alu := #alu_csr_out..alu_out_reg ;
+                            e2w_csr := #alu_csr_out..alu_out_csr;
+                            e2w_exnInfo := (false, _ 'd 0, _ 'd 0, _ 'd 0);
+                            e2w_inst := #inst;
+                            e2w_isMMIO := false;
+                            e2w_nextPc := #nextPC } in
+                return (#st, (#e2w, false))
+              else (* ALU/control/system *)
+                let st <- if (#props..itype == const Inst_Ctrl) then
+                           #st..Bht = bht_update((#st..Bht, (#_pc, #ctrl_out..ctrl_out_taken)))
+                         else return #st in
+                let isJalr := ((#flds..D_opcode == const opcode_JALR) 
+                     & (#flds..D_funct3 == const funct3_JALR)) in 
+                let isCtrlExn := #ctrl_out..ctrl_out_isExn in 
+                let ctrlExnCode := #ctrl_out..ctrl_out_exnCode  in 
+                let ctrlExnMtval := #ctrl_out..ctrl_out_mtval  in 
+                let e2w <- init_struct E2w_bookkeeping {
+                            e2w_alu := if #isJalr then
+                                         nextPc (#_pc)
+                                       else #alu_csr_out..alu_out_reg ;
+                            e2w_csr := #alu_csr_out..alu_out_csr;
+                            e2w_exnInfo := (#isCtrlExn, #ctrlExnCode, #ctrlExnMtval, #_pc);
+                            e2w_inst := #inst;
+                            e2w_isMMIO := false;
+                            e2w_nextPc := #nextPC } in
+                return (#st, (#e2w, #isCtrlExn))
+            else (* illegal *)
+              return (#st, (e2w_exn ((#inst, (const EXN_IllegalInstruction, (#inst, #_pc)))), true))
+          in
+          let st := #St_ExBook_IsExn.1 in 
+          let ex_book := #St_ExBook_IsExn.2.1 in
+          let isExn := #St_ExBook_IsExn.2.2 in
+          let st <- #st..D2e = fifo1_deq (#st..D2e) in 
+          let st <- #st..E2w = fifo1_enq ((#st..E2w , #ex_book)) in 
+          let st <- if (#nextPC == #dbook..d2e_ppc) then
+                     return #st
+                   else
+                     let st <- #st..Epoch = ~#st..Epoch in
+                     let st <- #st..Pc = #nextPC in 
+                     let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #nextPC))) in 
+                     return #st in 
+          if #isExn then
+            let trapHandlerAddr := csr_read ((#st..Csrs, const csrFile.CSR_mtvec)) in
+            let st <- #st..Pc = #trapHandlerAddr in
+            let st <- #st..Epoch = ~#st..Epoch in 
+            let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #trapHandlerAddr))) in 
+            return #st
+          else return #st
+      else (* mispredicted *)
+        let st <- #st..D2e = (fifo1_deq (#st..D2e)) in 
+        if #props..rdValid then (* release any write lock *)
+          let st <- #st..Rf = rf_release((#st..Rf, #flds..D_rdIdx)) in
           return #st
         else
           return #st
     )).
-
-      (* let fromIMem_empty := fifo1_empty (#st..FromIMem) in *)
-      (* let f2d_empty := fifo1_empty (#st..F2d) in *)
-      (* let d2e_full := fifo1_full (#st..D2e) in *)
-      (* let e2w_full := fifo1_full (#st..E2w) in *)
-      (* let f2d_book := fifo1_first (#st..F2d) in *)
-      (* let epoch := #st..Epoch in  *)
-      (* let depoch := #st..Depoch in  *)
-      (* let iepoch := #st..Iepoch in  *)
-      (* let inst := #imem_resp..mem_resp_data in *)
-      (* let D := decode params #inst in *)
-      (* let D_flds := decodeFields D in *)
-      (* if #fromIMem_empty | #f2d_empty then *)
-      (*   return false *)
-      (* else if bool_decide (#f2d_book..f2d_epoch = #epoch) && *)
-      (*         bool_decide (#f2d_book..f2d_depoch = #depoch) && *)
-      (*         bool_decide (#f2d_book..f2d_iepoch = #iepoch) then *)
-      (*   let rs1_idx := D_rs1Idx D_flds in *)
-      (*   let rs2_idx := D_rs2Idx D_flds in *)
-      (*   let rd_idx := D_rdIdx D_flds in *)
-      (*   let csr_idx := D_csrIdx D_flds in *)
-      (*   locked1 ← rf (RfScored.IsLocked rs1_idx); *)
-      (*   locked2 ← rf (RfScored.IsLocked rs2_idx); *)
-      (*   locked_rd ← rf (RfScored.IsLocked rd_idx); *)
-      (*   if d2e_full || (locked1 || locked2 || locked_rd) || (D_isSys D_flds && e2w_full) then *)
-      (*     return false *)
-      (*   else *)
-      (*     rs1 ← rf (RfScored.Read rs1_idx); *)
-      (*     rs2 ← rf (RfScored.Read rs2_idx); *)
-      (*     csr_val ← getCSR csr_idx; *)
-      (*     let imm := D_imm D_flds in  *)
-      (*     bht_ppcDP ← bht (BhtAPI.PpcDP (#f2d_book..f2d_pc) (bv_add (#f2d_book..f2d_pc) (bv_zero_extend _ imm))); *)
-      (*     let ppcDP := if D_isCtrl D_flds then bht_ppcDP else #f2d_book..f2d_ppc in *)
-      (*     let dbook := {| d2e_rval1 := rs1; *)
-      (*                     d2e_rval2 := rs2; *)
-      (*                     d2e_csr := csr_val; *)
-      (*                     d2e_pc := #f2d_book..f2d_pc; *)
-      (*                     d2e_ppc := ppcDP; *)
-      (*                     d2e_epoch := #f2d_book..f2d_epoch; *)
-      (*                     d2e_iepoch := #f2d_book..f2d_iepoch; *)
-      (*                     d2e_inst := #inst; *)
-      (*                  |} in *)
-      (*     f2d_ fifo1_deq;; *)
-      (*     fromIMem_ fifo1_deq;; *)
-      (*     d2e_ (fifo1_enq (#st..D2e, dbook));; *)
-      (*     let/prog _ := (if (bool_decide (ppcDP = #f2d_book..f2d_ppc)) then *)
-      (*                      pass *)
-      (*                    else *)
-      (*                      setPc ppcDP;; *)
-      (*                      setDepoch (negb #depoch);; *)
-      (*                      pass) in *)
-      (*     if D_rdValid D_flds then *)
-      (*       rf_ (RfScored.AcquireLock rd_idx);; *)
-      (*       return true *)
-      (*     else *)
-      (*       return true *)
-      (* else *)
-      (*   f2d_ fifo1_deq;; *)
-      (*   fromIMem_ fifo1_deq;; *)
-      (*   return false *)
-
 
   End cpu.
 End cpu.
