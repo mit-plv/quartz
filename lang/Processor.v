@@ -1043,6 +1043,7 @@ Module cpu.
     ; E2w : fifo1.State E2w_bookkeeping
     ; Mul : @multiplier.State mul_LogNSteps
     ; Mip : Bool
+    ; Mie : Bool
     ; InterruptSrc : mword
     ; Bht : @bht.State bht_idxSz
     ; Btb : @btb.State width btb_tagSz btb_idxSz
@@ -1068,10 +1069,14 @@ Module cpu.
     Notation rf_acquire := (RfScored.acquireLock (rfScored.impl _)).
     Notation rf_release := (RfScored.releaseLock (rfScored.impl _)).
     Notation csr_read := (CsrFile.readCsr (csrFile.impl)).
+    Notation csr_write := (CsrFile.writeCsr (csrFile.impl)).
     Notation bht_update := (Bht.update _ (bht.impl)).  
     Notation bht_ppcDp := (Bht.ppcDp _ (bht.impl)).
     Notation mul_full := (Multiplier.full _ (multiplier.impl mul_LogNSteps)).
     Notation mul_enq := (Multiplier.enq _ (multiplier.impl mul_LogNSteps)).
+    Notation mul_deq := (Multiplier.deq _ (multiplier.impl mul_LogNSteps)).
+    Notation mul_peek := (Multiplier.peek _ (multiplier.impl mul_LogNSteps)).
+    Notation mul_ready := (Multiplier.respReady _ (multiplier.impl mul_LogNSteps)).
 
     Let struct_test {var} := Fn (fun (st : var State) => quartz_eexpr:(
         let pc := #st..Pc in 
@@ -1318,6 +1323,78 @@ Module cpu.
           return #st
         else
           return #st
+    )).
+    Let handle_interrupt {var} : fn var (Pair State mword) State :=
+          Fn (fun (p: var (Pair State mword)) => quartz_eexpr:(
+      let st := #p.1 in 
+      let nextPc := #p.2 in
+      if #st..Mip & ~(#st..Mie == _ 'd 0) then
+        let trapHandlerAddr := csr_read ((#st..Csrs, const csrFile.CSR_mtvec)) in 
+        let st <- #st..Iepoch = ~(#st..Iepoch) in 
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mepc, #nextPc))) in
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mie, _ 'd 0))) in
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mtval, #st..InterruptSrc))) in
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mcause, _ 'd 0 ))) in
+        let st <- #st..Pc = #trapHandlerAddr in 
+        return #st
+      else return #st
+    )).
+
+    Let writeback_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
+      let e2w_book := fifo1_first (#st..E2w) in
+      let inst := #e2w_book..e2w_inst in 
+      let flds := getFields (#inst) in
+      let props := getInstrProps (#inst) in
+      let e2w_isExn := #e2w_book..e2w_exnInfo.1.1.1 in 
+      let exnCode := #e2w_book..e2w_exnInfo.1.1.2 in 
+      let exnMtval := #e2w_book..e2w_exnInfo.1.2 in 
+      let exnMepc := #e2w_book..e2w_exnInfo.2 in 
+      let isMem := (#props..itype == const Inst_Store) | (#props..itype == const Inst_Load)  in
+      let isMul := (#props..itype == const Inst_Mul) in 
+      if fifo1_empty (#st..E2w) | 
+         (~#e2w_isExn & 
+           ((#e2w_book..e2w_isMMIO & fifo1_empty (#st..FromMMIO)) |
+            (#isMem & ~#e2w_book..e2w_isMMIO & fifo1_empty (#st..FromDMem)) | 
+            (#isMul & ~mul_ready(#st..Mul)))) then
+        return #st
+      else if #e2w_isExn then
+        let st <- #st..E2w = fifo1_deq(#st..E2w) in 
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mie, _ 'd 0))) in
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mtval, #exnMtval))) in
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mcause, #exnCode))) in
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mepc, #exnMepc))) in
+        if #props..rdValid then
+          let st <- #st..Rf = rf_release ((#st..Rf, #flds..D_rdIdx)) in
+          return #st
+        else
+          return #st
+      else
+        let St_reg_csr <-
+          if #e2w_book..e2w_isMMIO then
+            let resp := fifo1_first (#st..FromMMIO) in
+            let st <- #st..FromMMIO = fifo1_deq (#st..FromMMIO) in 
+            return (#st, (#resp..mem_resp_data, 32 'd 0))  
+          else if #isMem then
+            let resp := fifo1_first (#st..FromDMem) in
+            let st <- #st..FromDMem = fifo1_deq (#st..FromDMem) in 
+            return (#st, (#resp..mem_resp_data, 32 'd 0))  
+          else if #isMul then
+            let resp := mul_peek (#st..Mul) in 
+            let st <- #st..Mul = mul_deq (#st..Mul) in 
+            return (#st, ($(expr.Unop unop.UnsignedResize (expr.Var resp)), _ 'd 0))  
+          else
+            return (#st, (#e2w_book..e2w_alu, #e2w_book..e2w_csr)) in
+        let st := #St_reg_csr.1 in
+        let reg_data := #St_reg_csr.2.1 in
+        let csr_data := #St_reg_csr.2.2 in
+        let st <- #st..E2w = fifo1_deq(#st..E2w) in 
+        let st <- if #props..rdValid then
+                   #st..Rf = rf_release ((#st..Rf, #flds..D_rdIdx)) 
+                 else return #st in  
+        let st <- if (#props..itype == const Inst_System) then
+                   #st..Csrs = csr_write((#st..Csrs, (#flds..D_csrIdx, #csr_data))) 
+                 else return #st in
+        return handle_interrupt ((#st, #e2w_book..e2w_nextPc))
     )).
 
   End cpu.
