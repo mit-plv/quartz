@@ -14,10 +14,10 @@ Ltac2 collect_consts (filter : constant -> instance -> bool) (e : constr) :=
       if FMap.mem c (st.(m)) then () else
       if Bool.neg (filter c i) then () else (
       match Control.case (fun () => Std.eval_cbv { RedFlags.none with Std.rConst := [Std.ConstRef c]} e) with
-      | Err _ => () | Val (body, _) => 
+      | Err _ => () | Val (body, _) =>
       if Constr.equal e body then () else (
       st.(m) := FMap.add c (-1) (st.(m));
-      let rec last l := match l with [] => None | x :: [] => (Some x) | x :: xs => last xs end in
+      let rec last l := match l with [] => None | x :: [] => (Some x) | _x :: xs => last xs end in
       let name := last (Env.path (Std.ConstRef c)) in
       let typ := Constr.type e in
       collect typ; collect body;
@@ -51,6 +51,7 @@ Ltac2 let_lift_constants (filter : constant -> instance -> bool) (e : constr) : 
 
 Ltac2 let_lift_all_constants e := let_lift_constants (fun _ _ => true) e.
 
+(*
 Module Private_test.
 Definition n : nat. exact O. Defined.
 Ltac2 Eval let_lift_all_constants 'n.
@@ -70,3 +71,4 @@ Ltac2 Eval let_lift_all_constants 'base_2'.
 From Stdlib Require Import Zmod.
 Check (eq_refl : Z.div_eucl = ltac2:(let e := let_lift_all_constants 'Z.div_eucl in exact $e)).
 End Private_test.
+*)

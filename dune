@@ -1,5 +1,7 @@
 (dirs :standard _objects)
 
+(alias (name default) (deps (alias_rec lang/all)))
+
 (env
   (dev
    (flags (:standard -warn-error -A \ -short-paths))))

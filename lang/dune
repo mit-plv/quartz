@@ -2,4 +2,4 @@
  (package quartz)
  (name quartz.lang)
  (theories Stdlib Ltac2)
-)
+ (flags (:standard -w -stdlib-vector -w -ambiguous-paths)))

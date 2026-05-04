@@ -1,8 +1,8 @@
-Require Coq.Strings.String.
+Require Stdlib.Strings.String.
 Require Import Ltac2.Ltac2. Import Ltac2.Option Ltac2.Constr Ltac2.Constr.Unsafe.
 
 Module Import Private.
-  Import Coq.Lists.List Coq.Strings.Ascii BinNat.
+  Import Lists.List Strings.Ascii BinNat.
   Local Ltac2 rec list_constr_of_constr_list xs :=
     match! xs with cons ?x ?xs => x :: list_constr_of_constr_list xs | nil => [] end.
   Local Definition f : ltac:(do 256 refine (ascii->_); exact unit) := ltac:(intros;exact tt).

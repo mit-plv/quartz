@@ -1,0 +1,11 @@
+(rule
+ (target output.txt)
+ (action
+  (with-stdout-to %{target}
+   (pipe-outputs
+    (echo "wrapped outputs works")
+    (run cat)
+   )
+  )
+ )
+)

@@ -1,0 +1,8 @@
+(coq.theory
+ (name quartz.test)
+ (theories quartz.lang)
+)
+
+(subdir run (dynamic_include ../gen/dune.inc))
+(subdir gen (rule (deps ../gen_dune_rules.py (glob_files ../*.v))
+  (action (with-stdout-to dune.inc (run python3 ../gen_dune_rules.py)))))

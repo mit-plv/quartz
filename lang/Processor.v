@@ -2,7 +2,7 @@
 
 From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
 
-From quartz.lang Require Import Syntax.
+From quartz.lang Require Import domain Syntax. Import (coercions) domain.Zmod.
 From Stdlib Require Import BinInt Bits.
 From Stdlib Require Import String List.
 From Stdlib Require NArith Vector.
@@ -131,7 +131,7 @@ Module fifo1. Section fifo1.
   Lemma full_ok (s : state) : fn.interp full s = s.(valid).
   Proof. trivial. Qed.
 
-  Lemma empty_ok (s : state) : fn.interp empty s = embed_bool (Zmod.eqb s.(valid) Zmod.zero).
+  Lemma empty_ok (s : state) : fn.interp empty s = Zmod.eqb s.(valid) Zmod.zero.
   Proof. trivial. Qed.
 
   Lemma enq_ok (s : state) x :
