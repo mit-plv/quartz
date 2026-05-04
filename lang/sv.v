@@ -69,7 +69,7 @@ Module sv.
           match v in Vector.t _ n return string with
           | Vector.nil _ => ""
           | Vector.cons _ hd 0 tl => @pp_const t' hd
-          | Vector.cons _ hd (S n') tl => @pp_const t' hd++", "++pp_vec tl
+          | Vector.cons _ hd (S n') tl => pp_vec tl++", "++@pp_const t' hd
           end
         in fun v => "'{"++pp_vec v++"}"
     end.
