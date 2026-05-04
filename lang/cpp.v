@@ -17,7 +17,7 @@ Module cpp.
 
   Fixpoint pp_type (t : type) : string :=
     match t with
-    | type.Unit => "std::monostate"
+    | type.Unit => "unit"
     | type.Bits sz => "unsigned _BitInt("++pp_Z sz++")"
     | type.Pair a b => "std::pair<"++pp_type a++", "++pp_type b++">"
     | type.Either a b => "std::variant<"++pp_type a++", "++pp_type b++">"
@@ -26,7 +26,7 @@ Module cpp.
     end.
 
   Definition pp_struct nts :=
-    "struct { "++ fold_right (fun '(n, t') acc => pp_type t'++" "++n++"; "++acc) "" nts++ "}".
+    "struct { "++ fold_right (fun '(n, t') acc => "[[no_unique_address]] " ++ pp_type t'++" "++n++"; "++acc) "" nts++ "}".
 
   Definition pp_typedef name nts := "typedef "++pp_struct nts++" "++name++";"++LF.
 
@@ -39,7 +39,7 @@ Module cpp.
 
   Fixpoint pp_const {t : type} : type.interp t -> string :=
     match t return type.interp t -> string with
-    | type.Unit => fun b => "std::monostate{}"
+    | type.Unit => fun b => "unit{}"
     | type.Bits sz => fun v => "(unsigned _BitInt("++pp_Z sz++"))"++pp_Z (Zmod.unsigned v)
     | type.Pair a b => fun p =>
         "std::make_pair("++@pp_const a (fst p)++", "++@pp_const b (snd p)++")"
@@ -266,6 +266,12 @@ Module cpp.
 #include <array>
 #include <cstddef>
 
+struct unit {
+    unit() = default;
+    template <std::size_t N> operator unsigned _BitInt(N)() const { return 0; }
+    template <std::size_t N> unit(unsigned _BitInt(N)) {}
+};
+
 template <typename T, std::size_t N>
 T& at0(std::array<T, N>& arr, std::size_t idx) {
     if (idx < N) { return arr[idx]; }
@@ -317,7 +323,7 @@ unsigned _BitInt(N) srs(signed _BitInt(N) a, unsigned _BitInt(M) b) {
     let fname := get_ret_fname fs in
     pp (wrap_pack W fs) ++ LF ++
     "#include <iostream>" ++ LF ++
-    "void print_hex(std::monostate x) { std::cout << ""0\n""; return; }" ++ LF ++
+    "void print_hex(unit x) { std::cout << ""0\n""; return; }" ++ LF ++
     "template <std::size_t N>" ++ LF ++
     "void print_hex(unsigned _BitInt(N) x) {" ++ LF ++
     "    if (!x) { std::cout << ""0\n""; return; }" ++ LF ++

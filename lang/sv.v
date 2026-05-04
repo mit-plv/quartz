@@ -281,7 +281,7 @@ Module sv.
 
   Definition ppRaw {a b} fns :=
     "// Generated from Rocq by Quartz (experimental prototype version)
-typedef enum { tt } unit;
+typedef enum bit { tt } unit; // no zero-size types in SystemVerilog :/
 
 class Pair #(parameter type A, parameter type B);
   typedef struct packed { A fst; B snd; } t;
