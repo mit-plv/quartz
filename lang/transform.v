@@ -467,7 +467,9 @@ Module fns.
     Definition map {a b} (fs : @fns var fn a b) : @fns var fn a b :=
       match fs with
       | Let fh ah f C => Let fh ah (fun v => fee _ (f v)) (fun fn_val => ffns _ _ (C fn_val))
+      | LetStmt fh ah f C => LetStmt fh ah f (fun fn_val => ffns _ _ (C fn_val))
       | Ret fh ah f => Ret fh ah (fun v => fee _ (f v))
+      | RetStmt fh ah f => RetStmt fh ah f
       end.
   End map.
 

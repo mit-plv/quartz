@@ -107,6 +107,18 @@ Module struct.
   Notation struct := type.struct (only parsing).
   Notation fieldType := type.fieldType (only parsing).
 
+  Fixpoint app {l r} : type.Struct "" l -> type.Struct "" r -> type.Struct "" (l ++ r) :=
+    match l with
+    | nil => fun _ v2 => v2
+    | (n, t) :: l' => fun v1 v2 => (fst v1, app (snd v1) v2)
+    end.
+
+  Fixpoint drop {l r} : type.Struct "" (l ++ r) -> (type.Struct "" r) :=
+    match l with
+    | nil => fun v => v
+    | (n, t) :: l' => fun v => @drop l' r (snd v)
+    end.
+
   Fixpoint get {s : struct} n : s -> fieldType s n :=
     match s with
     | nil => fun _ => tt
@@ -190,7 +202,7 @@ Module binop.
   | Slu {n m} : binop (Bits n) (Bits m) (Bits n)
   | Sru {n m} : binop (Bits n) (Bits m) (Bits n)
   | Srs {n m} : binop (Bits n) (Bits m) (Bits n)
-  | Mul {n m z} : binop (Bits n) (Bits m) (Bits z) 
+  | Mul {n m z} : binop (Bits n) (Bits m) (Bits z)
   | EqBits {n} : binop (Bits n) (Bits n) Bool
   | Compare (signed: bool) (c: compare) {n} : binop (Bits n) (Bits n) Bool
   | MkPair {a b: type} : binop a b (Pair a b)
@@ -449,15 +461,114 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
 End eexpr.
 Notation eexpr := eexpr.eexpr (only parsing).
 
+Module stmt.
+  Section WithSubstitutionType.
+    Context {var : type -> Type}.
+    Context {fn : type -> type -> Type}.
+    Local Notation expr := (@expr.expr var fn).
+    Local Notation eexpr := (@eexpr.eexpr var fn).
+
+    Definition locals (t : type) := var t.
+
+    Inductive stmt : type.struct -> Type :=
+    | Skip {s} : stmt s
+    | Let {s} (name_hint : string) {tx} (a : locals (type.Struct_ s) -> expr tx) (aC : var tx -> stmt s) : stmt s
+    | Bind {s} (name_hint : string) {tx} (a : locals (type.Struct_ s) -> eexpr tx) (aC : var tx -> stmt s) : stmt s
+    | If {s} (_ : locals (type.Struct_ s) -> expr Bool) (a b : stmt s) : stmt s
+    | Case {s} {l r} (_ : locals (type.Struct_ s) -> expr (Either l r)) (l : var l -> stmt s) (r : var r -> stmt s) : stmt s
+    | Upd {t} {l : type.struct} {n : string} {C : typeWithHole} {r : type.struct}
+          (pf : forall t, struct.fieldType (l ++ (n, t) :: r) n = t)
+          (i : locals (type.Struct_ (l ++ (n, typeWithHole.plug C t) :: r)) -> expr C)
+          (v : locals (type.Struct_ (l ++ (n, typeWithHole.plug C t) :: r)) -> expr t) : stmt (l ++ (n, typeWithHole.plug C t) :: r)
+    | LetMut {s} (name_hint : string) {tx} (a : locals (type.Struct_ s) -> expr tx) (aC : stmt ((name_hint, tx) :: s)) : stmt s
+    | LetUpd {s} (name_hint : string) {C : typeWithHole} (i : locals (type.Struct_ s) -> expr C) {t} (es : locals (type.Struct_ s) -> expr (typeWithHole.plug C t)) (v : locals (type.Struct_ s) -> expr t) (k : var (typeWithHole.plug C t) -> stmt s) : stmt s
+    | Seq {s} (a b : stmt s) : stmt s.
+  End WithSubstitutionType.
+  Arguments stmt : clear implicits.
+
+  Fixpoint interp {s} (st : stmt type.interp type.interpfn s) : type.interp (type.Struct_ s) -> type.interp (type.Struct_ s) :=
+    match st with
+    | Skip => fun env => env
+    | Let _ a k => fun env =>
+        let x := expr.interp (a env) in
+        interp (k x) env
+    | Bind _ a k => fun env =>
+        let x := eexpr.interp (a env) in
+        interp (k x) env
+    | If cond a b => fun env =>
+        if expr.interp (cond env) : bool
+        then interp a env
+        else interp b env
+    | Case cond l r => fun env =>
+        match expr.interp (cond env) with
+        | inl v => interp (l v) env
+        | inr v => interp (r v) env
+        end
+    | @Upd _ _ t l n C r pf i v => fun env =>
+        let i_val := expr.interp (i env) in
+        let v_val := expr.interp (v env) in
+        typeWithHole.upd (C:=@typeWithHole.Struct "" l n C r pf) env i_val (fun _ => v_val)
+    | LetMut _ a k => fun env =>
+        let x := expr.interp (a env) in
+        let new_env := (x, env) in
+        let final_env := interp k new_env in
+        snd final_env
+    | LetUpd _ i es v k => fun env =>
+        let i_val := expr.interp (i env) in
+        let es_val := expr.interp (es env) in
+        let v_val := expr.interp (v env) in
+        let new_struct := typeWithHole.upd es_val i_val (fun _ => v_val) in
+        interp (k new_struct) env
+    | Seq a b => fun env =>
+        let env' := interp a env in
+        interp b env'
+    end.
+
+  Declare Custom Entry quartz_stmt.
+  Notation "quartz_stmt:( e )" := e (e custom quartz_stmt, only parsing).
+
+  Notation "{ e }" := e (in custom quartz_stmt, e custom quartz_stmt at level 200).
+  Notation "$ v" := v (in custom quartz_stmt at level 0, v constr at level 0, format "'$' v").
+  Notation "x" := (x) (in custom quartz_stmt at level 0, x global).
+  Notation "'skip'" := (stmt.Skip) (in custom quartz_stmt at level 0).
+  Notation "a ';' b" := (stmt.Seq a b) (in custom quartz_stmt at level 200, right associativity).
+
+  Notation "'let' x ':=' a 'in' b" := (stmt.Let "Let" (fun _ => a) (fun x => b))
+    (in custom quartz_stmt at level 200, x name, a custom quartz_expr at level 200, b custom quartz_stmt at level 200, right associativity).
+
+  Notation "'mut' x ':=' a 'in' b" := (stmt.LetMut "LetMut" (fun _ => a) b)
+    (in custom quartz_stmt at level 0, x name, a custom quartz_expr at level 200, b custom quartz_stmt at level 200, right associativity).
+
+  Notation "'if' cond 'then' a 'else' b" := (stmt.If (fun _ => cond) a b)
+    (in custom quartz_stmt at level 100, cond custom quartz_expr at level 200, a custom quartz_stmt at level 100, b custom quartz_stmt at level 100).
+
+  Notation "f '=' v" := (ltac2:(
+    let (c, _) := typeWithHole.reify_field (pretype f) in
+    lazy_match! c with
+    | @typeWithHole.Struct _ ?l ?n ?innerC ?r ?pf =>
+      eexact (@stmt.Upd _ _ _ $l $n $innerC $r $pf)
+    end) (fun _ => expr.tt) (fun _ => v)) (in custom quartz_stmt at level 0, f global, v custom quartz_expr at level 200, only parsing).
+  Notation ".[ C , i ] '=' v" := (stmt.Upd (C:=C) (fun _ => i) (fun _ => v) eq_refl)
+    (in custom quartz_stmt at level 200, C constr at level 0, i custom quartz_expr at level 200, v custom quartz_expr at level 200).
+
+End stmt.
+Notation stmt := stmt.stmt (only parsing).
+
+
+
 Module fn.
   Import expr eexpr.
   Section WithSubstitutionType.
     Context {var : type -> Type}.
-    Inductive fn {a b} := Fn { body : var a -> eexpr var (@fn) b }.
+    Inductive fn : type -> type -> Type :=
+    | FnEexpr {a b} (body : var a -> eexpr var (@fn) b) : fn a b
+    | FnStmt {inputs outputs : type.struct} (body : stmt.stmt var (@fn) (inputs ++ outputs)%list) : fn (type.Struct_ inputs) (type.Struct_ outputs).
   End WithSubstitutionType.
-  Arguments Fn {_ _ _}.
-  #[global] Add Printing Constructor fn.
+  Notation Fn := FnEexpr.
   Arguments fn : clear implicits.
+
+  Arguments FnEexpr {_ _ _} _.
+  Arguments FnStmt {_ _ _} _.
 
   Section WithF.
   Context {var : type -> Type} {fn1 fn2} (f : forall a b : type, fn1 a b -> fn2 a b).
@@ -480,10 +591,30 @@ Module fn.
     | Case e a b => Case (expr_map_fn e) (fun l => @eexpr_map_fn _ (a l)) (fun r => @eexpr_map_fn _ (b r))
     | Upd i s v => Upd (@expr_map_fn _ i) (@expr_map_fn _ s) (@expr_map_fn _ v)
     end.
+  Fixpoint stmt_map_fn {s} (e : stmt.stmt var fn1 s) {struct e} : stmt.stmt var fn2 s :=
+    match e with
+    | stmt.Skip => stmt.Skip
+    | stmt.Let x a C => stmt.Let x (fun env => expr_map_fn (a env)) (fun v => @stmt_map_fn _ (C v))
+    | stmt.Bind x a C => stmt.Bind x (fun env => eexpr_map_fn (a env)) (fun v => @stmt_map_fn _ (C v))
+    | stmt.If cond a b => stmt.If (fun env => expr_map_fn (cond env)) (stmt_map_fn a) (stmt_map_fn b)
+    | stmt.Case cond l r => stmt.Case (fun env => expr_map_fn (cond env)) (fun v => @stmt_map_fn _ (l v)) (fun v => @stmt_map_fn _ (r v))
+    | @stmt.Upd _ _ t l n C r pf i v => stmt.Upd pf (fun env => expr_map_fn (i env)) (fun env => expr_map_fn (v env))
+    | stmt.LetMut x a C => stmt.LetMut x (fun env => expr_map_fn (a env)) (@stmt_map_fn _ C)
+    | stmt.LetUpd x i es v k => stmt.LetUpd x (fun env => expr_map_fn (i env)) (fun env => expr_map_fn (es env)) (fun env => expr_map_fn (v env)) (fun v => @stmt_map_fn _ (k v))
+    | stmt.Seq a b => stmt.Seq (stmt_map_fn a) (stmt_map_fn b)
+    end.
   End WithF.
 
   Fixpoint interp {a b} (f : fn type.interp a b) {struct f} : type.interp a -> type.interp b :=
-     fun v => eexpr.interp (eexpr_map_fn (@interp) (f.(body) v)).
+    match f with
+    | FnEexpr body => fun v => eexpr.interp (eexpr_map_fn (@interp) (body v))
+    | @FnStmt _ inputs outputs body => fun v =>
+        let defaults_out := type.default_struct type.default _ in
+        let env := struct.app v defaults_out in
+        let mapped_body := stmt_map_fn (@interp) body in
+        let env' := stmt.interp mapped_body env in
+        struct.drop env'
+    end.
 
   Ltac2 let_lift_fns e := let_lift_constants (fun c i =>
     lazy_match! Constr.type (UConstr.make (UConstr.Constant c i)) with
@@ -501,9 +632,9 @@ Module fn.
       let r := pred ( succ ( #z ) ) in return #r)).
     Lemma interp_cycle : interp cycle = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
     Proof.
-      cbn [cycle            interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
+      cbn [cycle            interp eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
       (* = (fun v : Bits 8 => interp pred (interp succ v)) *)
-      cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
+      cbn [cycle pred succ  interp eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
       (* = RHS *)
       trivial.
     Qed.
@@ -520,7 +651,7 @@ Module fn.
     Definition cycle {var} := Fn (var:=var) (fun z => quartz_eexpr:(
       let r := pred ( succ ( #z ) ) in return #r)).
     Lemma interp_cycle : interp cycle = fun z => (z + bits.of_Z _ 1 + bits.of_Z _ (-1))%Zmod.
-    Proof. cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp]. trivial. Qed.
+    Proof. cbn [cycle pred succ  interp eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp]. trivial. Qed.
     Lemma ok_cycle z : interp cycle z = z.
     Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; trivial. Qed.
   End Private_example_global_polyfn.
@@ -531,16 +662,30 @@ Module fns. (* deeply embedded environments of functions *)
   Section WithSubstitutionType.
     Context {var : type -> Type}.
     Context {fn : type -> type -> Type}.
-    Inductive fns {a b} :=
-    | Let {a b} (func_name_hint arg_name_hint : string) (f : var a -> eexpr var fn b) (_ : fn a b -> fns)
-    | Ret (func_name_hint arg_name_hint : string) (_ : var a -> eexpr var fn b).
+    Inductive fns : type -> type -> Type :=
+    | Let {a b} {a' b'} (func_name_hint arg_name_hint : string) (f : var a' -> eexpr var fn b') (_ : fn a' b' -> fns a b) : fns a b
+    | LetStmt {a b} {inputs outputs : type.struct} (func_name_hint arg_name_hint : string) (f : stmt.stmt var fn (inputs ++ outputs)%list) (_ : fn (type.Struct (func_name_hint ++ "_in") inputs) (type.Struct (func_name_hint ++ "_out") outputs) -> fns a b) : fns a b
+    | Ret {a b} (func_name_hint arg_name_hint : string) (_ : var a -> eexpr var fn b) : fns a b
+    | RetStmt {inputs outputs : type.struct} (func_name_hint arg_name_hint : string) (f : stmt.stmt var fn (inputs ++ outputs)%list) : fns (type.Struct (func_name_hint ++ "_in") inputs) (type.Struct (func_name_hint ++ "_out") outputs).
   End WithSubstitutionType.
   Arguments fns : clear implicits.
 
   Fixpoint interp {a b} (fs : fns type.interp type.interpfn a b) : a -> b :=
     match fs with
-    | Let _ _ f C => let f := fun a => eexpr.interp (f a) in interp (C f)
+    | Let _ _ f C => let f_interp := fun a => eexpr.interp (f a) in interp (C f_interp)
+    | LetStmt fh ah f C =>
+        let f_interp := fun v =>
+          let defaults_out := type.default_struct type.default _ in
+          let env := struct.app v defaults_out in
+          let env' := stmt.interp f env in
+          struct.drop env'
+        in interp (C f_interp)
     | Ret _ _ f => fun a => eexpr.interp (f a)
+    | RetStmt fh ah f => fun v =>
+        let defaults_out := type.default_struct type.default _ in
+        let env := struct.app v defaults_out in
+        let env' := stmt.interp f env in
+        struct.drop env'
     end.
 
   Import Ltac2.Printf.

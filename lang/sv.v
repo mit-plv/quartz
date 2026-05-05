@@ -146,7 +146,7 @@ Module sv.
     | typeWithHole.HOLE => base
     | typeWithHole.PairL t1 _ => pp_hole_upd t1 (base ++ ".fst") idx
     | typeWithHole.PairR _ t2 => pp_hole_upd t2 (base ++ ".snd") idx
-    | typeWithHole.Struct _ _ n t _ => pp_hole_upd t (base ++ "." ++ n) idx
+    | typeWithHole.Struct _ _ n t _ => pp_hole_upd t (if String.eqb base "" then n else base ++ "." ++ n) idx
     | typeWithHole.Array _ t _ => pp_hole_upd t (base ++ "[" ++ idx ++ ".fst]") (idx ++ ".snd")
     end.
 
@@ -160,7 +160,7 @@ Module sv.
         let T2 := typeWithHole.plug t2 t_hole in
         pp_hole_get t_hole t2 ("Pair#(" ++ pp_type t1 ++ ", " ++ pp_type T2 ++ ")::snd(" ++ base ++ ")") idx
     | typeWithHole.Struct _ _ n t _ =>
-        pp_hole_get t_hole t (base ++ "." ++ n) idx
+        pp_hole_get t_hole t (if String.eqb base "" then n else base ++ "." ++ n) idx
     | typeWithHole.Array _ t _ =>
         pp_hole_get t_hole t (base ++ "[" ++ idx ++ ".fst]") (idx ++ ".snd")
     end.
@@ -208,6 +208,7 @@ Module sv.
     | expr.Binop op e1 e2 => pp_binop op (pp_expr e1) (pp_expr e2)
     | expr.If cond a b => "("++pp_expr cond++" ? "++pp_expr a++" : "++pp_expr b++")"
     | expr.Call f e1 => f++"("++pp_expr e1++")"
+
     end.
 
   Fixpoint pp_eexpr {t} (ind : string) (e : eexpr.eexpr var fn t) (out_var : string) (id : nat) : string * nat :=
@@ -253,17 +254,104 @@ Module sv.
          pp_hole_upd C out_var (pp_expr i) ++ " = " ++ pp_expr v ++ ";", id)
     end.
 
+  Fixpoint pp_stmt {s} (ind : string) (st : stmt.stmt var fn s) (id : nat) : string * nat :=
+    match st with
+    | stmt.Skip => ("", id)
+    | @stmt.Let _ _ _ x tx a k =>
+        let vname := x ++ "_" ++ pp_nat id in
+        let stmt1 := ind ++ "begin " ++ pp_type tx ++ " " ++ vname ++ " = " ++ pp_expr (a "") ++ ";" in
+        let '(stmt2, id') := pp_stmt ind (k vname) (S id) in
+        (stmt1 ++ LF ++ stmt2 ++ " end", id')
+    | @stmt.Bind _ _ _ x tx a k =>
+        let vname := x ++ "_" ++ pp_nat id in
+        let stmt_decl := ind ++ "begin " ++ pp_type tx ++ " " ++ vname ++ ";" in
+        let '(stmt1, id1) := pp_eexpr ind (a "") vname (S id) in
+        let '(stmt2, id2) := pp_stmt ind (k vname) id1 in
+        (stmt_decl ++ LF ++ stmt1 ++ LF ++ stmt2 ++ " end", id2)
+    | @stmt.If _ _ _ cond a b =>
+        let ind_nested := ind ++ "  " in
+        let '(stmt_a, id1) := pp_stmt ind_nested a id in
+        let '(stmt_b, id2) := pp_stmt ind_nested b id1 in
+        (ind ++ "if (" ++ pp_expr (cond "") ++ ") begin" ++ LF ++
+         stmt_a ++ LF ++
+         ind ++ "end else begin" ++ LF ++
+         stmt_b ++ LF ++
+         ind ++ "end", id2)
+    | @stmt.Case _ _ _ l_t r_t cond l_branch r_branch =>
+        let l_var := "left_" ++ pp_nat id in
+        let r_var := "right_" ++ pp_nat id in
+        let ind_case := ind ++ "  " in
+        let ind_nested := ind_case ++ "  " in
+        let '(stmt_l, id1) := pp_stmt ind_nested (l_branch l_var) (S id) in
+        let '(stmt_r, id2) := pp_stmt ind_nested (r_branch r_var) id1 in
+        (ind ++ "case (" ++ pp_expr (cond "") ++ ") matches" ++ LF ++
+         ind_case ++ "tagged left ." ++ l_var ++ " : begin" ++ LF ++
+         stmt_l ++ LF ++
+         ind_case ++ "end" ++ LF ++
+         ind_case ++ "tagged right ." ++ r_var ++ " : begin" ++ LF ++
+         stmt_r ++ LF ++
+         ind_case ++ "end" ++ LF ++
+         ind ++ "endcase", id2)
+    | @stmt.Upd _ _ t l n C r pf i v =>
+        (ind ++ pp_hole_upd (@typeWithHole.Struct "" l n C r pf) "" (pp_expr (i "")) ++ " = " ++ pp_expr (v "") ++ ";", id)
+    | @stmt.LetMut _ _ _ name_hint tx a k =>
+        let vname := name_hint in
+        let stmt1 := ind ++ "begin " ++ pp_type tx ++ " " ++ vname ++ " = " ++ pp_expr (a "") ++ ";" in
+        let '(stmt2, id') := pp_stmt ind k (S id) in
+        (stmt1 ++ LF ++ stmt2 ++ LF ++ ind ++ "end", id')
+    | @stmt.LetUpd _ _ _ name_hint C i t es v k =>
+        let vname := name_hint ++ "_" ++ pp_nat id in
+        let stmt1 := ind ++ "begin " ++ pp_type (typeWithHole.plug C t) ++ " " ++ vname ++ " = " ++ pp_expr (es "") ++ ";" in
+        let stmt2 := ind ++ pp_hole_upd C vname (pp_expr (i "")) ++ " = " ++ pp_expr (v "") ++ ";" in
+        let '(stmt3, id') := pp_stmt ind (k vname) (S id) in
+        (stmt1 ++ LF ++ stmt2 ++ LF ++ stmt3 ++ " end", id')
+    | @stmt.Seq _ _ _ a b =>
+        let '(stmt1, id1) := pp_stmt ind a id in
+        let '(stmt2, id2) := pp_stmt ind b id1 in
+        (stmt1 ++ LF ++ stmt2, id2)
+    end.
+
   Definition pp_fn {a b} (fname argname : string) (fn_body : var a -> eexpr.eexpr var fn b) : string :=
     "function automatic " ++ pp_type b ++ " " ++ fname ++ " ("++LF++
     "  input " ++ pp_type a ++ " " ++ argname ++ ");"++LF ++
       fst (pp_eexpr "  " (fn_body argname) fname 0)++LF++
     "endfunction"++LF.
 
+  Definition pp_fn_stmt {inputs outputs : type.struct} (fname : string) (body : stmt.stmt var fn (inputs ++ outputs)%list) : string :=
+    let fix init_inputs (l : type.struct) : string :=
+      match l with
+      | nil => ""
+      | (n, t) :: rest => "  " ++ pp_type t ++ " " ++ n ++ " = args." ++ n ++ ";" ++ LF ++ init_inputs rest
+      end in
+    let fix init_outputs (l : type.struct) : string :=
+      match l with
+      | nil => ""
+      | (n, t) :: rest => "  " ++ pp_type t ++ " " ++ n ++ " = " ++ pp_const (type.default t) ++ ";" ++ LF ++ init_outputs rest
+      end in
+    let '(stmt_body, _) := pp_stmt "  " body 0 in
+    let fix repack_outputs (l : type.struct) : string :=
+      match l with
+      | nil => ""
+      | (n, t) :: rest => n ++ ": " ++ n ++ (if match rest with nil => true | _ => false end then "" else ", ") ++ repack_outputs rest
+      end in
+    let ret_struct := pp_type (type.Struct (fname ++ "_out") outputs) ++ "'{ " ++ repack_outputs outputs ++ " }" in
+    "function automatic " ++ pp_type (type.Struct (fname ++ "_out") outputs) ++ " " ++ fname ++ " (" ++ LF ++
+    "  input " ++ pp_type (type.Struct (fname ++ "_in") inputs) ++ " args);" ++ LF ++
+    init_inputs inputs ++
+    init_outputs outputs ++
+    stmt_body ++ LF ++
+    "  return " ++ ret_struct ++ ";" ++ LF ++
+    "endfunction" ++ LF.
+
   Fixpoint pp_fns {a b} (fs : fns.fns var fn a b) : string :=
     match fs with
     | fns.Let fname argname fn_body C =>
         pp_fn fname argname fn_body ++ ""++LF ++ pp_fns (C fname)
+    | @fns.LetStmt _ _ _ _ inputs outputs fname _ fn_body C =>
+        @pp_fn_stmt inputs outputs fname fn_body ++ ""++LF ++ pp_fns (C fname)
     | fns.Ret fname argname fn_body => pp_fn fname argname fn_body
+    | @fns.RetStmt _ _ inputs outputs fname _ fn_body =>
+        @pp_fn_stmt inputs outputs fname fn_body
     end.
 
   Definition type_set_add (t : type) (acc : list type) : list type :=
@@ -320,8 +408,12 @@ Module sv.
     | @fns.Let _ _ _ _ a' b' _ _ fn_body C =>
         let acc := typeannots_type b' (typeannots_type a' acc) in
         typeannots_fns (C "") (typeannots_eexpr (fn_body "") acc)
+    | fns.LetStmt _ _ _ C =>
+        typeannots_fns (C "") acc
     | fns.Ret _ _ fn_body =>
         typeannots_eexpr (fn_body "") acc
+    | fns.RetStmt _ _ _ =>
+        acc
     end.
 
   Fixpoint is_subterm (s t : type) : bool :=
