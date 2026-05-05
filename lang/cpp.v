@@ -1,6 +1,6 @@
 #[export] Set Primitive Projections.
 From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
-From Stdlib Require Import BinInt Bits Vector String List DecimalString HexString.
+From Stdlib Require Import BinInt Bits Vector String Ascii List DecimalString HexString.
 Import ListNotations.
 
 From quartz.lang Require Import ident_to_string let_lift Syntax transform.
@@ -15,20 +15,64 @@ Module cpp.
   Definition LF := "
 ".
 
-  Fixpoint pp_type (t : type) : string :=
+  Local Coercion Z_of_ascii (c : Ascii.ascii) : Z := Z.of_N (Ascii.N_of_ascii c).
+  Definition isalpha (c : Z) : bool := ((("A"%char <=? c)%Z && (c <=? "Z"%char)%Z) || (("a"%char <=? c)%Z && (c <=? "z"%char)%Z))%bool.
+  Definition isdigit (c : Z) : bool := (("0"%char <=? c)%Z && (c <=? "9"%char)%Z)%bool.
+
+  Fixpoint valid_ident_tail (s : string) : bool :=
+    match s with
+    | EmptyString => true
+    | String c s => ((isalpha c || isdigit c || Z.eqb c "_"%char) && valid_ident_tail s)%bool
+    end.
+
+  Definition valid_ident (s : string) : string :=
+    match s with
+    | EmptyString => "`error ""empty name"" "
+    | String c s' =>
+      if (existsb (String.eqb s) [
+        "alignas"; "alignof"; "auto"; "bool"; "break"; "case"; "char"; "const"; "constexpr"; "continue"; "default"; "do";
+        "double"; "else"; "enum"; "extern"; "false"; "float"; "for"; "goto"; "if"; "inline"; "int"; "long"; "nullptr";
+        "register"; "restrict"; "return"; "short"; "signed"; "sizeof"; "static"; "static_assert"; "struct"; "switch";
+        "thread_local"; "true"; "typedef"; "typeof"; "typeof_unqual"; "union"; "unsigned"; "void"; "volatile"; "while";
+        "asm"; "fortran"; "catch"; "char8_t"; "char16_t"; "char32_t"; "class"; "concept"; "consteval"; "constinit";
+        "const_cast"; "decltype"; "delete"; "dynamic_cast"; "explicit"; "export"; "friend"; "mutable"; "namespace";
+        "new"; "noexcept"; "operator"; "private"; "protected"; "public"; "reinterpret_cast"; "requires"; "static_cast";
+        "template"; "this"; "throw"; "try"; "typeid"; "typename"; "using"; "virtual"; "wchar_t"
+      ]) then "`error ""reserved name: " ++ s ++ """ "
+      else if andb (orb (isalpha c) (Z.eqb c "_"%char)) (valid_ident_tail s')
+           then "" else "`error ""invalid name: " ++ s ++ """ "
+    end.
+
+  Definition valid_type_shallow (t : type) : string :=
+    match t with
+    | type.Unit => ""
+    | type.Bits sz => if (sz <? 0)%Z then "`error ""bitwidth must be nonnegative"" " else ""
+    | type.Pair a b =>
+        if (type.size a <=? 0)%Z || (type.size b <=? 0)%Z then "`error ""pair component must have positive size"" " else ""
+    | type.Either a b =>
+        if (type.size a <=? 0)%Z && (type.size b <=? 0)%Z then "`error ""one Either side must have positive size"" " else ""
+    | type.Struct name _ => valid_ident name
+    | type.Array t' sz => ""
+    end.
+
+  Fixpoint pp_type' (t : type) : string :=
+    valid_type_shallow t ++
     match t with
     | type.Unit => "unit"
     | type.Bits sz => "unsigned _BitInt("++pp_Z sz++")"
-    | type.Pair a b => "std::pair<"++pp_type a++", "++pp_type b++">"
-    | type.Either a b => "std::variant<"++pp_type a++", "++pp_type b++">"
+    | type.Pair a b => "std::pair<"++pp_type' a++", "++pp_type' b++">"
+    | type.Either a b => "std::variant<"++pp_type' a++", "++pp_type' b++">"
     | type.Struct name _ => name
-    | type.Array t sz => "std::array<"++pp_type t++", "++pp_nat sz++">"
+    | type.Array t sz => "std::array<"++pp_type' t++", "++pp_nat sz++">"
     end.
 
-  Definition pp_struct nts :=
-    "struct { "++ fold_right (fun '(n, t') acc => "[[no_unique_address]] " ++ pp_type t'++" "++n++"; "++acc) "" nts++ "}".
+  Definition pp_type (t : type) : string := pp_type' t.
 
-  Definition pp_typedef name nts := "typedef "++pp_struct nts++" "++name++";"++LF.
+  Definition pp_struct nts :=
+    "struct { "++ fold_right (fun '(n, t') acc => valid_ident n ++ "[[no_unique_address]] " ++ pp_type t'++" "++n++"; "++acc) "" nts++ "}".
+
+  Definition pp_typedef name nts :=
+    "typedef "++pp_struct nts++" "++name++";"++LF.
 
   Fixpoint pp_typedefs (ts : list type) : string :=
     match ts with
@@ -323,9 +367,10 @@ unsigned _BitInt(N) srs(signed _BitInt(N) a, unsigned _BitInt(M) b) {
     let fname := get_ret_fname fs in
     pp (wrap_pack W fs) ++ LF ++
     "#include <iostream>" ++ LF ++
-    "void print_hex(unit x) { std::cout << ""0\n""; return; }" ++ LF ++
+    "void print_hex(unit x) { std::cout << ""0'h0\n""; return; }" ++ LF ++
     "template <std::size_t N>" ++ LF ++
     "void print_hex(unsigned _BitInt(N) x) {" ++ LF ++
+    "    std::cout << N << ""'h"";" ++ LF ++
     "    if (!x) { std::cout << ""0\n""; return; }" ++ LF ++
     "    int32_t i = (int32_t)((N + 3) / 4) - 1;" ++ LF ++
     "    for (; i >= 0; --i) {" ++ LF ++

@@ -1,6 +1,6 @@
 #[export] Set Primitive Projections.
 From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
-From Stdlib Require Import BinInt Bits Vector String List DecimalString HexString.
+From Stdlib Require Import BinInt Bits Vector String Ascii List DecimalString HexString.
 Import ListNotations.
 
 From quartz.lang Require Import ident_to_string let_lift Syntax transform.
@@ -15,7 +15,72 @@ Module sv.
   Definition LF := "
 ".
 
+  Local Coercion Z_of_ascii (c : Ascii.ascii) : Z := Z.of_N (Ascii.N_of_ascii c).
+
+  Definition isalpha (c : Z) : bool := ((("A"%char <=? c)%Z && (c <=? "Z"%char)%Z) || (("a"%char <=? c)%Z && (c <=? "z"%char)%Z))%bool.
+  Definition isdigit (c : Z) : bool := (("0"%char <=? c)%Z && (c <=? "9"%char)%Z)%bool.
+
+  Fixpoint valid_ident_tail (s : string) : bool :=
+    match s with
+    | EmptyString => true
+    | String c s => ((isalpha c || isdigit c || (c =? "_"%char)%Z || (c =? "$"%char)%Z) && valid_ident_tail s)%bool
+    end.
+
+  Definition valid_ident (s : string) : string :=
+    match s with
+    | EmptyString => "`error ""empty name"" "
+    | String c s' =>
+      if (existsb (String.eqb s) [
+        "always"; "and"; "assign"; "begin"; "buf"; "bufif0"; "bufif1"; "case"; "casex"; "casez"; "cmos"; "deassign";
+        "default"; "defparam"; "disable"; "edge"; "else"; "end"; "endcase"; "endfunction"; "endmodule"; "endprimitive";
+        "endspecify"; "endtable"; "endtask"; "event"; "for"; "force"; "forever"; "fork"; "function"; "highz0";
+        "highz1"; "if"; "ifnone"; "initial"; "inout"; "input"; "integer"; "join"; "large"; "macromodule"; "medium";
+        "module"; "nand"; "negedge"; "nmos"; "nor"; "not"; "notif0"; "notif1"; "or"; "output"; "parameter"; "pmos";
+        "posedge"; "primitive"; "pull0"; "pull1"; "pulldown"; "pullup"; "rcmos"; "real"; "realtime"; "reg"; "release";
+        "repeat"; "rnmos"; "rpmos"; "rtran"; "rtranif0"; "rtranif1"; "scalared"; "small"; "specify"; "specparam";
+        "strong0"; "strong1"; "supply0"; "supply1"; "table"; "task"; "time"; "tran"; "tranif0"; "tranif1"; "tri";
+        "tri0"; "tri1"; "triand"; "trior"; "trireg"; "vectored"; "wait"; "wand"; "weak0"; "weak1"; "while"; "wire";
+        "wor"; "xnor"; "xor"; "automatic"; "cell"; "config"; "design"; "endconfig"; "endgenerate"; "generate";
+        "genvar"; "incdir"; "include"; "instance"; "liblist"; "library"; "localparam"; "noshowcancelled";
+        "pulsestyle_ondetect"; "pulsestyle_onevent"; "showcancelled"; "signed"; "unsigned"; "use"; "uwire"; "alias";
+        "always_comb"; "always_ff"; "always_latch"; "assert"; "assume"; "before"; "bind"; "bins"; "binsof"; "bit";
+        "break"; "byte"; "chandle"; "class"; "clocking"; "const"; "constraint"; "context"; "continue"; "cover";
+        "covergroup"; "coverpoint"; "cross"; "dist"; "do"; "endclass"; "endclocking"; "endgroup"; "endinterface";
+        "endpackage"; "endprogram"; "endproperty"; "endsequence"; "enum"; "expect"; "export"; "extends"; "extern";
+        "final"; "first_match"; "foreach"; "forkjoin"; "iff"; "ignore_bins"; "illegal_bins"; "import"; "inside";
+        "int"; "interface"; "intersect"; "join_any"; "join_none"; "local"; "logic"; "longint"; "matches"; "modport";
+        "new"; "null"; "package"; "packed"; "priority"; "program"; "property"; "protected"; "pure"; "rand"; "randc";
+        "randcase"; "randsequence"; "ref"; "return"; "sequence"; "shortint"; "shortreal"; "solve"; "static"; "string";
+        "struct"; "super"; "tagged"; "this"; "throughout"; "timeprecision"; "timeunit"; "type"; "typedef"; "union";
+        "unique"; "var"; "virtual"; "void"; "wait_order"; "wildcard"; "with"; "within"; "accept_on"; "checker";
+        "endchecker"; "eventually"; "global"; "implies"; "let"; "nexttime"; "reject_on"; "restrict"; "s_always";
+        "s_eventually"; "s_nexttime"; "s_until"; "s_until_with"; "strong"; "sync_accept_on"; "sync_reject_on";
+        "unique0"; "until"; "until_with"; "untyped"; "weak"; "implements"; "interconnect"; "nettype"; "sof"
+      ]) then "`error ""reserved name: " ++ s ++ """ "
+      else if andb (orb (isalpha c) (Z.eqb c "_"%char)) (valid_ident_tail s')
+           then "" else "`error ""invalid name: " ++ s ++ """ "
+    end.
+
+  Definition valid_array (t' : type) : string :=
+    if (type.size t' <=? 0)%Z then "`error ""array element must have positive size"" " else "".
+
+  Definition valid_type_shallow (t : type) : string :=
+    match t with
+    | type.Unit => ""
+    | type.Bits sz => if (sz <? 0)%Z then "`error ""bitwidth must be nonnegative"" " else ""
+    | type.Pair a b =>
+        if (type.size a <=? 0)%Z || (type.size b <=? 0)%Z then "`error ""pair component must have positive size"" " else ""
+    | type.Either a b =>
+        if (type.size a <=? 0)%Z && (type.size b <=? 0)%Z then "`error ""either components cannot be both zero-sized"" " else ""
+    | type.Struct name _ => valid_ident name
+    | type.Array t' sz => valid_array t'
+    end.
+
+  Definition valid_field (n : string) (t' : type) : string :=
+    if (type.size t' <=? 0)%Z then "`error ""field " ++ n ++ " must have positive size"" " else "".
+
   Fixpoint pp_type' (t : type) (dims : string) : string :=
+    valid_type_shallow t ++
     match t with
     | type.Unit => "unit" ++ dims
     | type.Bits sz => "bit" ++ dims ++ "["++pp_Z (sz - 1)++":0]"
@@ -28,9 +93,11 @@ Module sv.
   Definition pp_type (t : type) : string := pp_type' t "".
 
   Definition pp_struct nts :=
-    "struct packed { "++ fold_right (fun '(n, t') acc => pp_type t'++" "++n++"; "++acc) "" nts++ "}".
+    "struct packed { "++ fold_right (fun '(n, t') acc => valid_field n t' ++ valid_ident n ++ pp_type t'++" "++n++"; "++acc) "" nts++ "}".
 
-  Definition pp_typedef name nts := "typedef "++pp_struct nts++" "++name++";"++LF.
+  Definition pp_typedef name nts :=
+    fold_right (fun '(n, t') acc => valid_field n t' ++ acc) "" nts ++
+    "typedef "++pp_struct nts++" "++name++";"++LF.
 
   Fixpoint pp_typedefs (ts : list type) : string :=
     match ts with
@@ -296,6 +363,7 @@ class Either #(parameter type A, parameter type B);
   static function t right(B b); return tagged right b; endfunction
 endclass"++LF++LF++
     pp_typedefs (topsort (typeannots_fns fns [])) ++ ""++LF ++ @pp_fns a b fns.
-  Definition pp {a b} fns := @ppRaw a b (
-    fns.rmap (fun _ e => expr.unresizesame (expr.unapp0l (expr.unapp0r e))) (fun _ => id) (fun a b => id) fns).
+  Definition pp {a b} fns :=
+    (match b with type.Unit => "`error ""top-level return type cannot be unit"" " ++ LF | _ => "" end) ++
+    @ppRaw a b (fns.rmap (fun _ e => expr.unresizesame (expr.unapp0l (expr.unapp0r e))) (fun _ => id) (fun a b => id) fns).
 End sv.

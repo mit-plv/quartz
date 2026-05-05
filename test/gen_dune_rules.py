@@ -8,6 +8,20 @@ def generate_rules_for_file(path):
     test_name = os.path.splitext(filename)[0]
     inner_func_name = f"{test_name}_inner"
 
+    cpp_reject = False
+    sv_reject = False
+    with open(path, 'r') as f:
+        first_line = f.readline().strip()
+        if first_line.startswith("(*!") and first_line.endswith("*)"):
+            content = first_line[3:-2].strip()
+            if content == "cpp:reject":
+                cpp_reject = True
+            elif content == "sv:reject":
+                sv_reject = True
+            elif content == "cpp:reject sv:reject" or content == "sv:reject cpp:reject":
+                cpp_reject = True
+                sv_reject = True
+
     print(f"""
 ; Rules for {test_name}
 
@@ -32,14 +46,6 @@ def generate_rules_for_file(path):
     (run python3 -c "import sys, re; s = sys.stdin.read(); m = re.search(r\\"=\\\\s*\\\\\\"(.*)\\\\\\\"(?:\\\\s*:\\\\s*string)?\\", s, re.DOTALL); sys.stdout.write((m.group(1).replace('\\\\\\\"\\\\\\\"', '\\\\\\\"') + chr(10)) if m else s)")))))
 
 (rule
- (target {test_name}.sv_out)
- (deps ../../slang/build/bin/slang {test_name}.sv)
- (action (with-stdout-to %{{target}}
-   (pipe-stdout
-    (run ../../slang/build/bin/slang --quiet -Wno-missing-top {test_name}.sv --eval "{inner_func_name}(tt)")
-    (run python3 -c "import sys, re; s = sys.stdin.read(); m = re.search(r\\"([0-9]+)'s?h([0-9a-fA-F]+)\\", s); sys.stdout.write((m.group(2) + chr(10)) if m else s)")))))
-
-(rule
  (target {test_name}.cpp)
  (deps ../../lang/cpp.vo {src_path}.vo)
  (action
@@ -47,27 +53,42 @@ def generate_rules_for_file(path):
    (pipe-stdout
     (echo "Require Import quartz.lang.Syntax quartz.lang.cpp quartz.test.{test_name}. Import String.\\nLocal Open Scope string_scope.\\nCompute cpp.pp_test_driver (ltac:(repeat (constructor || cbn || discriminate))) {test_name}.\\n")
     (run coqtop -q -Q .. quartz.test -Q ../../lang quartz.lang)
-    (run python3 -c "import sys, re; m = re.search(r\\"=\\\\s*\\\\\\"(.*)\\\\\\\"(?:\\\\s*:\\\\s*string)?\\", sys.stdin.read(), re.DOTALL); sys.stdout.write(m.group(1).replace('\\\\\\\"\\\\\\\"', '\\\\\\\"') if m else '')")))))
+    (run python3 -c "import sys, re; s = sys.stdin.read(); m = re.search(r\\"=\\\\s*\\\\\\"(.*)\\\\\\\"(?:\\\\s*:\\\\s*string)?\\", s, re.DOTALL); sys.stdout.write(m.group(1).replace('\\\\\\\"\\\\\\\"', '\\\\\\\"') if m else s)")))))
 
 (rule
- (target {test_name}.exe)
+ (deps ../../slang/build/bin/slang {test_name}.sv)""")
+    if sv_reject:
+        print(f"""
+ (alias test-sv)
+ (action (with-accepted-exit-codes (not 0) (run ../../slang/build/bin/slang --quiet -Wno-missing-top {test_name}.sv --eval "{inner_func_name}(tt)"))))""")
+    else:
+        print(f"""
+ (target {test_name}.sv_out)
+ (action (with-stdout-to %{{target}} (run ../../slang/build/bin/slang --quiet -Wno-missing-top {test_name}.sv --eval "{inner_func_name}(tt)"))))
+
+(rule (alias test-sv) (deps {test_name}.out {test_name}.sv_out) (action (diff {test_name}.out {test_name}.sv_out)))""")
+
+    print(f"""
+(rule
  (deps {test_name}.cpp)
- (action (run c++ -fsanitize=address,undefined -std=c++2b {test_name}.cpp -o %{{target}})))
+ {"(alias test-cpp)" if cpp_reject else f"(target {test_name}.exe)"}
+ (action
+  (with-accepted-exit-codes {"(not 0)" if cpp_reject else "0"}
+   (run c++ -fsanitize=address,undefined -std=c++2b {test_name}.cpp {"-fsyntax-only" if cpp_reject else "-o %{target}"}))))
+""")
 
+    if not cpp_reject:
+        print(f"""
 (rule
- (target {test_name}.cpp_out)
  (deps {test_name}.exe)
+ (target {test_name}.cpp_out)
  (action (with-stdout-to %{{target}} (run ./{test_name}.exe))))
 
-(rule
- (alias runtest)
- (deps {test_name}.cpp_out {test_name}.sv_out {test_name}.out)
- (action (progn
-   (diff {test_name}.out {test_name}.cpp_out)
-   (diff {test_name}.out {test_name}.sv_out)
- )))
+(rule (alias test-cpp) (deps {test_name}.out {test_name}.cpp_out) (action (diff {test_name}.out {test_name}.cpp_out)))
 """)
 
 if __name__ == "__main__":
     for f in glob.glob("../*.v"):
         generate_rules_for_file(f)
+    print(f"""(alias (name runtest) (deps (alias test-sv)))""")
+    print(f"""(alias (name runtest) (deps (alias test-cpp)))""")

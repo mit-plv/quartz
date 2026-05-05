@@ -1,6 +1,6 @@
 #[export] Set Primitive Projections.
 From Stdlib Require Import BinInt Bits Eqdep.
-From Stdlib Require Import String List HexString.
+From Stdlib Require Import String List HexString DecimalString.
 From Stdlib Require Vector.
 Import ListNotations.
 
@@ -20,6 +20,7 @@ End Zmod.
 
 Module bits.
   Definition hex {n : Z} (v : bits n) : string :=
+    NilZero.string_of_int (Z.to_int n) ++ "'h" ++
     let s := HexString.of_Z (Zmod.unsigned v) in
     String.substring 2 (String.length s - 2) s.
 End bits.
