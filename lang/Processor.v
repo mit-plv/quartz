@@ -14,13 +14,15 @@ Module InterfaceExample.
 Import fn.
 Import type.
 Open Scope Z_scope.
+From stdpp Require Import base bitvector.definitions vector.
 
 (* TODO: sum types? *)
 
+Import (coercions) BV.
 Module QStdlib.
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Definition ExtractBits {var} {n} (s: Z) {l: Z} : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
+  Definition ExtractBits {var} {n} (s: Z) {l: N} : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
     let shift_amt : Bits n := _ 'd s in
     let shifted_b := #b >> #shift_amt in    
     return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))).
@@ -28,14 +30,15 @@ Module QStdlib.
   (* Concatenate bitvectors, matching [bv_concat sz hi lo] semantics.
      Result width is explicitly [sz] (typically [sz = hi_w + lo_w]).
    *)
-  Definition Concat {var} {sz hi_w lo_w : Z}
+  Definition Concat {var} {sz : N} {hi_w lo_w : N}
     : fn _ (type.Pair (Bits hi_w) (Bits lo_w)) (Bits sz) :=
+    let lo_w' := Z.of_N lo_w in 
     Fn (fun p : var (type.Pair (Bits hi_w) (Bits lo_w)) => quartz_eexpr:(
       let hi := #p .1 in
       let lo := #p .2 in
       let hi' : Bits sz := $(expr.Unop unop.UnsignedResize (expr.Var hi)) in
       let lo' : Bits sz := $(expr.Unop unop.UnsignedResize (expr.Var lo)) in
-      let sh : Bits sz := _ 'd lo_w in
+      let sh : Bits sz := _ 'd lo_w' in
       return ((#hi' << #sh) | #lo')
     )).
 
@@ -131,7 +134,8 @@ Module fifo1. Section fifo1.
   Lemma full_ok (s : state) : fn.interp full s = s.(valid).
   Proof. trivial. Qed.
 
-  Lemma empty_ok (s : state) : fn.interp empty s = Zmod.eqb s.(valid) Zmod.zero.
+  Lemma empty_ok (s : state) : fn.interp empty s = 
+                                 bool_decide (s.(valid) = bv_0 _).
   Proof. trivial. Qed.
 
   Lemma enq_ok (s : state) x :
@@ -146,8 +150,9 @@ Module fifo1. Section fifo1.
   Lemma not_full_and_empty (st : state) :
     fn.interp empty st <> fn.interp full st.
   Proof.
-    cbn -[Zmod.eqb]. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
-    case (Zmod.bool_cases (valid st)); cbv; congruence.
+    cbn. 
+    case (BV.bool_cases (valid st)); vm_compute bool_decide; 
+      cbv[bool_to_bv]; discriminate.
   Qed.
 End fifo1. End fifo1.
 
@@ -155,7 +160,7 @@ End fifo1. End fifo1.
 
 Module Multiplier.
 
-  Record Multiplier {var} {width : Z} {req: type} (t_state : type) := {
+  Record Multiplier {var} {width : N} {req: type} (t_state : type) := {
     peek : fn var t_state (type.Bits (width + width));
     full : fn var t_state type.Bool;
     respReady : fn var t_state type.Bool;
@@ -168,8 +173,8 @@ End Multiplier. Notation Multiplier:= Multiplier.Multiplier (only parsing).
 
 Module multiplier. Section multiplier.
   (* Context {width : Z}. *)
-  Notation width := 32.
-  Context (logNSteps : Z).
+  Notation width := 32%N.
+  Context (logNSteps : N).
 
   Record req_t := { input_a : Bits width; input_b : Bits width}.
   Definition Req := type.reify'' req_t.
@@ -254,7 +259,7 @@ End multiplier. End multiplier.
 
 Module RfScored. Section RfScored.
 Context {var: type -> Type}.
-Context {log_nregs: Z}.
+Context {log_nregs: N}.
 
 Notation t_idx := (Bits log_nregs).
   
@@ -271,11 +276,11 @@ Module rfScored.
   Notation state' t_data nregs := (Vector.t (Bool * t_data) nregs).
   Section rfScored.
   Context {var: type -> Type}.
-  Context {log_nregs: Z}.
+  Context {log_nregs: N}.
   Context (t_data : type).
 
   Notation t_idx := (Bits log_nregs).
-  Definition nregs : nat := Z.to_nat (2^log_nregs).
+  Definition nregs : nat := N.to_nat (2^log_nregs).
   Notation state := (state' t_data nregs).
   Definition State := type.reify'' state.
 

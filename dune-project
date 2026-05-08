@@ -11,6 +11,8 @@
  (depends 
   (coq (>= 9.0))
   (rocq-stdlib (>= 9.1.0))
+  (rocq-stdpp (>= 1.13.0))
+  (rocq-stdpp-bitvector (>= 1.11.0))
  )
 )
 

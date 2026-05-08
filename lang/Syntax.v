@@ -15,16 +15,30 @@ Module Import BV.
   Inductive Cases2 : bv 1 -> Prop :=
   | Cases2_0 : Cases2 (bv_0 _) | Cases2_1 : Cases2 (Z_to_bv _ 1).
   Lemma cases2 (x : bv 1) : Cases2 x.
-  Proof. 
-    destruct (decide (x = bv_0 _)) eqn:?; subst.
+  Proof.
+    destruct (decide (x = bv_0 _)) as [->|Hne].
     - constructor.
-    - 
-  Admitted.
+    - enough (x = Z_to_bv 1 1) as -> by constructor.
+      apply (proj2 (bv_eq _ _ _)).
+      assert (Hne' : bv_unsigned x ≠ 0%Z).
+      { intro He. apply Hne. apply (proj2 (bv_eq _ _ _)).
+        rewrite bv_0_unsigned. exact He. }
+      assert (Heq : bv_unsigned (Z_to_bv 1 1) = 1%Z) by
+        (apply Z_to_bv_small; unfold bv_modulus; simpl; lia).
+      rewrite Heq.
+      pose proof (bv_unsigned_in_range 1 x) as Hr.
+      unfold bv_modulus in Hr. simpl in Hr. lia.
+  Qed.
   Inductive BoolCases : bv 1 -> Prop :=
   | BoolTrue : BoolCases true | BoolFalse : BoolCases false.
   Lemma bool_cases (b : bv 1) : BoolCases b.
-  Proof. 
-  Admitted.
+  Proof.
+    destruct (cases2 b).
+    - enough (embed_bool false = bv_0 1%N) as H by (rewrite <- H; exact BoolFalse).
+      apply (proj2 (bv_eq _ _ _)).
+      vm_compute. reflexivity.
+    - exact BoolTrue.
+  Qed.
 End BV.
 
 Module type.
@@ -63,6 +77,11 @@ Module type.
     | cons (_, t) s => (default t, default_struct s)
     end.
   Context (t : type).
+  (* Fixpoint default_array (n : nat) := *)
+  (*   match n return Vector.t t n with *)
+  (*   | O => Vector.nil _ *)
+  (*   | S n => Vector.cons (type.interp t) (default t) n (default_array n) *)
+  (*   end. *)
   Definition default_array (n : nat) : vec t n :=
     fun_to_vec (fun _ => default t). 
   End WithDefault.
@@ -272,7 +291,7 @@ Module typeWithHole.
         (List.nth_default (default _) (Vector.to_list r) (Z.to_nat (bv_unsigned (fst i)))) (snd i)
     end.
   Arguments get {_ _}.
-
+Search vec.
   Fixpoint upd C : forall t, plug C t -> indices C -> (t -> t) -> plug C t :=
     match C return forall t, plug C t -> indices C -> (t -> t) -> plug C t with
     | HOLE => fun t r i f => f r
@@ -281,7 +300,8 @@ Module typeWithHole.
     | @Struct _ _ n t _ pf => fun _ r i f =>
         struct.upd n r (eq_rect (plug t _) (fun u => u -> u) (fun v => upd t _ v i f) _ (eq_sym (pf _)))
     | Array sz t _ => fun _ r i f =>
-        Vector.upd r (Z.to_nat (bv_unsigned (fst i))) (fun r => upd _ _ r (snd i) f)
+        Vector.upd r (Z.to_nat (bv_unsigned (fst i))) 
+                     (fun r => upd _ _ r (snd i) f)
     end.
   Arguments upd {_ _}.
 

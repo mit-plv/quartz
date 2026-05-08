@@ -23,8 +23,9 @@ End Forall_forall.
 End List.
 
 From quartz.lang Require Import domain Syntax ident_to_string let_lift.
+From stdpp Require Import bitvector.definitions.
 
-Open Scope Z_scope.
+Open Scope N_scope.
 
 Import Syntax.type.
 Module Import type.
@@ -48,7 +49,7 @@ Module Import type.
   Fixpoint eq_dec (x y : type) : {x = y} + {x <> y}. Proof. refine
     match x, y with
     | Bits sz1, Bits sz2 =>
-      match Z.eq_dec sz1 sz2 with
+      match N.eq_dec sz1 sz2 with
       | left pf => left _
       | _ => right _
       end
@@ -86,24 +87,24 @@ Module Import type.
     all : try congruence.
   Qed.
 
-  Fixpoint size (t : type) : Z :=
+  Fixpoint size (t : type) : N :=
     match t with
     | Bits sz => sz
     | Pair a b => size b + size a
-    | Either a b => Z.max (size a) (size b) + 1
-    | Struct _ nts => fold_right (fun nt acc => acc + size (snd nt)) 0 nts
-    | Array t n => Nat.iter n (Z.add (size t)) 0
+    | Either a b => N.max (size a) (size b) + 1
+    | Struct _ nts => fold_right (fun nt acc => acc + size (snd nt))%N 0%N nts
+    | Array t n => Nat.iter n (N.add (size t)) 0%N
     end.
 
   Section WithPack.
     Context (pack : forall {t : type}, forall (v : t), bits (size t)).
     Fixpoint pack_struct (fs : list (string * type))
       : fold_right (fun nt T => type.interp (snd nt) * T)%type unit fs ->
-      bits (fold_right (fun nt acc => acc + size (snd nt)) 0 fs) :=
+      bits (fold_right (fun nt acc => acc + size (snd nt)) 0 fs)%N :=
       match fs
       return fold_right (fun nt T => type.interp (snd nt) * T)%type unit fs ->
              bits (fold_right (fun nt acc => acc + size (snd nt)) 0 fs)
-      with | nil => fun _ => Zmod.zero
+      with | nil => fun _ => bv_0 _
       | p :: l => fun v => Zmod.app (pack_struct l (snd v)) (@pack _ (fst v))
       end.
     Context {t : type}.

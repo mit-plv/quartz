@@ -1,5 +1,5 @@
 (coq.theory
  (package quartz)
  (name quartz.lang)
- (theories Stdlib Ltac2)
+ (theories Stdlib Ltac2 stdpp)
  (flags (:standard -w -stdlib-vector -w -ambiguous-paths)))
