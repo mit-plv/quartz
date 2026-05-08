@@ -955,7 +955,7 @@ Module CPU.
   | DMEM
   | MMIO.
 
-  Record Cpu {var} (t_mem_req t_mem_resp: type) (t_state: type) := {
+  Record Cpu {var} {t_mem_req t_mem_resp: type} (t_state: type) := {
     enqResp : mem_type -> fn var (Pair t_state t_mem_resp) t_state;
     deqReq : mem_type -> fn var t_state t_state;
     setInterrupt : fn var (Pair t_state (Pair Bool mword)) t_state; 
@@ -1439,13 +1439,13 @@ Module cpu.
       return (! #full) & (! #e2w_empty & #e2w_book..e2w_isMMIO) & #reqEmpty
     )).
 
-    Definition can_deq_resp_imem {var} :=
+    Definition can_deq_req_imem {var} :=
       Fn (fun (st : var State) => quartz_eexpr:(
       return ! fifo1_empty (#st..ToIMem))).
-    Definition can_deq_resp_dmem {var} :=
+    Definition can_deq_req_dmem {var} :=
       Fn (fun (st : var State) => quartz_eexpr:(
       return ! fifo1_empty (#st..ToDMem))).
-    Definition can_deq_resp_mmio {var} :=
+    Definition can_deq_req_mmio {var} :=
       Fn (fun (st : var State) => quartz_eexpr:(
       return ! fifo1_empty (#st..ToMMIO ))).
 
@@ -1458,6 +1458,73 @@ Module cpu.
     Definition peek_mmio {var} :=
       Fn (fun (st : var State) => quartz_eexpr:(
       return fifo1_first (#st..ToMMIO ))).
+
+    Definition set_interrupt {var} := Fn (fun (arg: var (Pair State (Pair Bool mword)) ) => quartz_eexpr:(
+      let st := #arg.1 in 
+      let mip := #arg.2.1 in 
+      let interruptSrc := #arg.2.2 in 
+      let st <- #st..Mip = #mip in
+      let st <- #st..InterruptSrc = #interruptSrc in
+      return #st)).
+
+     Definition enq_resp_imem {var} := Fn (fun (arg: var (Pair State Mem_resp_t) ) => quartz_eexpr:(
+       let st := #arg.1 in let resp := #arg.2 in
+       let st <- #st..FromIMem = fifo1_enq ((#st..FromIMem,#resp)) in
+       return #st
+     )).
+     Definition enq_resp_dmem {var} := Fn (fun (arg: var (Pair State Mem_resp_t) ) => quartz_eexpr:(
+       let st := #arg.1 in let resp := #arg.2 in
+       let st <- #st..FromDMem = fifo1_enq ((#st..FromDMem,#resp)) in
+       return #st
+     )).
+     Definition enq_resp_mmio {var} := Fn (fun (arg: var (Pair State Mem_resp_t) ) => quartz_eexpr:(
+       let st := #arg.1 in let resp := #arg.2 in
+       let st <- #st..FromMMIO = fifo1_enq ((#st..FromMMIO ,#resp)) in
+       return #st
+     )).
+     Definition deq_req_imem {var} := Fn (fun (st: var State) => quartz_eexpr:(
+       let st <- #st..FromIMem = fifo1_deq ((#st..FromIMem )) in
+       return #st
+     )).
+     Definition deq_req_dmem {var} := Fn (fun (st: var State) => quartz_eexpr:(
+       let st <- #st..FromDMem = fifo1_deq ((#st..FromDMem )) in
+       return #st
+     )).
+
+     Definition deq_req_mmio {var} := Fn (fun (st: var State) => quartz_eexpr:(
+       let st <- #st..FromMMIO = fifo1_deq ((#st..FromMMIO)) in
+       return #st
+     )).
+
+    Definition impl {var} : @Cpu var Mem_req_t Mem_resp_t State := {|
+      CPU.enqResp mem := match mem with
+                         | CPU.IMEM => enq_resp_imem
+                         | CPU.DMEM => enq_resp_dmem
+                         | CPU.MMIO => enq_resp_mmio
+                         end;
+      CPU.deqReq mem := match mem with
+                         | CPU.IMEM => deq_req_imem
+                         | CPU.DMEM => deq_req_dmem
+                         | CPU.MMIO => deq_req_mmio
+                         end;
+      CPU.setInterrupt := set_interrupt;
+      CPU.tick := tick;
+      CPU.canEnqResp mem := match mem with
+                            | CPU.IMEM => can_enq_resp_imem
+                            | CPU.DMEM => can_enq_resp_dmem
+                            | CPU.MMIO => can_enq_resp_mmio
+                            end;
+      CPU.canDeqReq mem := match mem with
+                           | CPU.IMEM => can_deq_req_imem
+                           | CPU.DMEM => can_deq_req_dmem
+                           | CPU.MMIO => can_deq_req_mmio
+                           end;
+      CPU.peek mem := match mem with
+                      | CPU.IMEM => peek_imem
+                      | CPU.DMEM => peek_dmem
+                      | CPU.MMIO => peek_mmio
+                      end;
+     |}.
 
   End cpu.
 End cpu.
