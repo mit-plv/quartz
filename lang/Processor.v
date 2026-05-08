@@ -1095,7 +1095,7 @@ Module cpu.
       reflexivity.
     Qed.
                                                                    
-    Let fetch {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    Definition fetch_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
       if (fifo1_full (#st..ToIMem)) | (fifo1_full (#st..F2d)) then
         return #st 
       else
@@ -1198,7 +1198,7 @@ Module cpu.
                             e2w_isMMIO := false;
                             e2w_nextPc := _ 'd 0 })).
 
-    Let execute_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    Definition execute_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
       let dbook := fifo1_first (#st..D2e) in
       let inst := #dbook..d2e_inst in
       let _pc := #dbook..d2e_pc in 
@@ -1340,7 +1340,7 @@ Module cpu.
       else return #st
     )).
 
-    Let writeback_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    Definition writeback_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
       let e2w_book := fifo1_first (#st..E2w) in
       let inst := #e2w_book..e2w_inst in 
       let flds := getFields (#inst) in
@@ -1396,6 +1396,68 @@ Module cpu.
                  else return #st in
         return handle_interrupt ((#st, #e2w_book..e2w_nextPc))
     )).
+
+    Definition tick {var} := Fn (fun (st : var State) => quartz_eexpr:(
+      let st := writeback_stage (#st) in
+      let st := execute_stage (#st) in
+      let st := decode_stage (#st) in
+      let st := fetch_stage (#st) in
+      return #st)).
+
+    Notation foo := FromIMem.
+
+    (* TODO *)
+    (* Inductive MemType := *)
+    (* | Imem *)
+    (* | Dmem *)
+    (* | Mmio. *)
+    
+    (* Definition fromMem (mem: MemType) := *)
+    (*   match mem with *)
+    (*   | Imem => FromIMem *)
+    (*   | Dmem => FromDMem *)
+    (*   | Mmio => FromMMIO *)
+    (*   end.  *)
+    
+    (* Definition can_enq_resp (mem: MemType) {var} :=  *)
+    (*   let mem := fromMem mem in  *)
+    (*   Fn (fun (st : var State) => quartz_eexpr:( *)
+    (*   return ! fifo1_full (#st..foo))).                                                                               *)
+
+    Definition can_enq_resp_imem {var} :=
+      Fn (fun (st : var State) => quartz_eexpr:(
+      return ! fifo1_full (#st..FromIMem))).
+    Definition can_enq_resp_dmem {var} :=
+      Fn (fun (st : var State) => quartz_eexpr:(
+      return ! fifo1_full (#st..FromDMem))).
+    Definition can_enq_resp_mmio {var} :=
+      Fn (fun (st : var State) => quartz_eexpr:( 
+      let e2w_empty := fifo1_empty (#st..E2w) in
+      let reqEmpty := fifo1_empty (#st..ToMMIO) in
+      let e2w_book := fifo1_first (#st..E2w) in
+      let full := fifo1_full (#st..FromMMIO) in
+      return (! #full) & (! #e2w_empty & #e2w_book..e2w_isMMIO) & #reqEmpty
+    )).
+
+    Definition can_deq_resp_imem {var} :=
+      Fn (fun (st : var State) => quartz_eexpr:(
+      return ! fifo1_empty (#st..ToIMem))).
+    Definition can_deq_resp_dmem {var} :=
+      Fn (fun (st : var State) => quartz_eexpr:(
+      return ! fifo1_empty (#st..ToDMem))).
+    Definition can_deq_resp_mmio {var} :=
+      Fn (fun (st : var State) => quartz_eexpr:(
+      return ! fifo1_empty (#st..ToMMIO ))).
+
+    Definition peek_imem {var} :=
+      Fn (fun (st : var State) => quartz_eexpr:(
+      return fifo1_first (#st..ToIMem))).
+    Definition peek_dmem {var} :=
+      Fn (fun (st : var State) => quartz_eexpr:(
+      return fifo1_first (#st..ToDMem))).
+    Definition peek_mmio {var} :=
+      Fn (fun (st : var State) => quartz_eexpr:(
+      return fifo1_first (#st..ToMMIO ))).
 
   End cpu.
 End cpu.
