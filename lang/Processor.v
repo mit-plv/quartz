@@ -106,10 +106,13 @@ Module fifo1. Section fifo1.
 
   Let enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
     let st := #p .1 in let d  := #p .2 in
-    let is_full := full ( #st ) (* #st..valid  *)in                        
-    let st <- #st..valid = true in
-    let st <- #st..data = (if #is_full then #st..data else #d) in
-    return #st)).
+    let is_full := full ( #st ) (* #st..valid  *)in 
+    if #is_full then
+      return #st
+    else
+      let st <- #st..valid = true in
+      let st <- #st..data = #d in
+      return #st)).
 
   Let deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let st_new <- #st..valid = false in
@@ -187,18 +190,18 @@ Module multiplier. Section multiplier.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let peek {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition peek {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let out := #st..result in
     return (#out))).
 
-  Let full {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition full {var} := Fn (fun (st : var State) => quartz_eexpr:(
     return #st..valid)).
 
-  Let respReady {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition respReady {var} := Fn (fun (st : var State) => quartz_eexpr:(
     return #st..finished)).
 
   (* TODO: reification of types in other types. *)
-  Let enq {var} := Fn (fun (p : var (type.Pair State Req)) => quartz_eexpr:(
+  Definition enq {var} := Fn (fun (p : var (type.Pair State Req)) => quartz_eexpr:(
     let st := #p .1 in let d  := #p .2 in
     let is_full := full ( #st ) in                        
     if #is_full then
@@ -211,14 +214,14 @@ Module multiplier. Section multiplier.
       let st <- #st..nstep = _ 'd 0 in
       return #st)).
 
-  Let deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
     if #st..finished then
       let st <- #st..valid = false in
       let st <- #st..finished = false in 
       return #st 
     else return #st)).
 
-  Let tick {var} := Fn (fun (st: var State) => quartz_eexpr:(
+  Definition tick {var} := Fn (fun (st: var State) => quartz_eexpr:(
      if #st..valid & ! #st..finished then
        if !#st..op1 | !#st..op2 then (* zero-skip *)
          let st <- #st..finished = true in 
@@ -1015,6 +1018,8 @@ Module cpu.
 
   Coercion mem_req_rep (v : mem_req_t) : type.reify'' mem_req_t :=
     ltac2:(let t := struct.rep &v in exact $t).
+  Coercion mem_resp_rep (v : mem_resp_t) : type.reify'' mem_resp_t :=
+    ltac2:(let t := struct.rep &v in exact $t).
 
   Section cpu.
     Context {mul_LogNSteps: Z}.
@@ -1043,11 +1048,12 @@ Module cpu.
     ; E2w : fifo1.State E2w_bookkeeping
     ; Mul : @multiplier.State mul_LogNSteps
     ; Mip : Bool
-    ; Mie : Bool
+    (* ; Mie : Bool *)
     ; InterruptSrc : mword
     ; Bht : @bht.State bht_idxSz
     ; Btb : @btb.State width btb_tagSz btb_idxSz
     }. 
+
 
     Definition State := type.reify'' state.
     Coercion rep (v : state) : type.reify'' state :=
@@ -1074,6 +1080,7 @@ Module cpu.
     Notation bht_ppcDp := (Bht.ppcDp _ (bht.impl)).
     Notation mul_full := (Multiplier.full _ (multiplier.impl mul_LogNSteps)).
     Notation mul_enq := (Multiplier.enq _ (multiplier.impl mul_LogNSteps)).
+    Notation mul_tick := (Multiplier.tick _ (multiplier.impl mul_LogNSteps)).
     Notation mul_deq := (Multiplier.deq _ (multiplier.impl mul_LogNSteps)).
     Notation mul_peek := (Multiplier.peek _ (multiplier.impl mul_LogNSteps)).
     Notation mul_ready := (Multiplier.respReady _ (multiplier.impl mul_LogNSteps)).
@@ -1121,7 +1128,7 @@ Module cpu.
     (* TODO: enum type *)
     Import Decode.
 
-    Let decode_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    Definition decode_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
       if (fifo1_empty (#st..FromIMem)) | (fifo1_empty (#st..F2d)) then
         return #st
       else
@@ -1328,7 +1335,8 @@ Module cpu.
           Fn (fun (p: var (Pair State mword)) => quartz_eexpr:(
       let st := #p.1 in 
       let nextPc := #p.2 in
-      if #st..Mip & ~(#st..Mie == _ 'd 0) then
+      let mie := csr_read ((#st..Csrs, const csrFile.CSR_mie)) in 
+      if #st..Mip & ~(#mie == _ 'd 0) then
         let trapHandlerAddr := csr_read ((#st..Csrs, const csrFile.CSR_mtvec)) in 
         let st <- #st..Iepoch = ~(#st..Iepoch) in 
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mepc, #nextPc))) in
@@ -1396,12 +1404,16 @@ Module cpu.
                  else return #st in
         return handle_interrupt ((#st, #e2w_book..e2w_nextPc))
     )).
+    Definition tick_mul {var} := Fn (fun (st : var State) => quartz_eexpr:(
+      let st <- #st..Mul = mul_tick(#st..Mul) in 
+      return #st)).
 
     Definition tick {var} := Fn (fun (st : var State) => quartz_eexpr:(
       let st := writeback_stage (#st) in
       let st := execute_stage (#st) in
       let st := decode_stage (#st) in
       let st := fetch_stage (#st) in
+      let st := tick_mul (#st) in 
       return #st)).
 
     Notation foo := FromIMem.
@@ -1459,6 +1471,13 @@ Module cpu.
       Fn (fun (st : var State) => quartz_eexpr:(
       return fifo1_first (#st..ToMMIO ))).
 
+    Definition set_pc {var} := Fn (fun (arg: var (Pair State mword) ) => quartz_eexpr:(
+      let st := #arg.1 in 
+      let pc := #arg.2 in 
+      let st <- #st..Pc = #pc in
+      return #st )).
+
+
     Definition set_interrupt {var} := Fn (fun (arg: var (Pair State (Pair Bool mword)) ) => quartz_eexpr:(
       let st := #arg.1 in 
       let mip := #arg.2.1 in 
@@ -1483,16 +1502,16 @@ Module cpu.
        return #st
      )).
      Definition deq_req_imem {var} := Fn (fun (st: var State) => quartz_eexpr:(
-       let st <- #st..FromIMem = fifo1_deq ((#st..FromIMem )) in
+       let st <- #st..ToIMem = fifo1_deq ((#st..ToIMem )) in
        return #st
      )).
      Definition deq_req_dmem {var} := Fn (fun (st: var State) => quartz_eexpr:(
-       let st <- #st..FromDMem = fifo1_deq ((#st..FromDMem )) in
+       let st <- #st..ToDMem = fifo1_deq ((#st..ToDMem )) in
        return #st
      )).
 
      Definition deq_req_mmio {var} := Fn (fun (st: var State) => quartz_eexpr:(
-       let st <- #st..FromMMIO = fifo1_deq ((#st..FromMMIO)) in
+       let st <- #st..ToMMIO = fifo1_deq ((#st..ToMMIO)) in
        return #st
      )).
 
