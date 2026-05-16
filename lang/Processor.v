@@ -276,7 +276,6 @@ Module rfScored.
   Context {var: type -> Type}.
   Context {log_nregs: Z}.
   Context (t_data : type).
-
   Notation t_idx := (Bits log_nregs).
   Definition nregs : nat := Z.to_nat (2^log_nregs).
   Notation state := (state' t_data nregs).
@@ -291,6 +290,9 @@ Module rfScored.
 
   Let read {var} : fn _ _ t_data := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 in 
+    if !#idx then
+      return const (default t_data)
+    else
     return #st[#idx] .2)).
 
   (* TODO: #st[#idx].1 = true syntax *)
