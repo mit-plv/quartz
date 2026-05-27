@@ -448,11 +448,15 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
   Coercion Ret : expr >-> eexpr.
   Arguments eexpr : clear implicits.
 
+  Definition LetBlock {X} {Y} (a: X) b  : Y:=
+    let x := a in b a.
+  
   Fixpoint interp {t} (e: eexpr type.interp type.interpfn t) : t :=
     match e in eexpr _ _ t return t with
     | Ret e => expr.interp e
-    | Let _ a b => let x := expr.interp a in interp (b x)
-    | Bind _ a b => let x := interp a in interp (b x)
+    | Let _ a b => (* let x := expr.interp a in interp (b x) *)
+                  LetBlock (expr.interp a) (fun x => interp (b x))
+    | Bind _ a b => LetBlock (interp a) (fun x => interp ( b x)) 
     | If e a b => if expr.interp e : bool then interp a else interp b
     | Case e l r => match expr.interp e with inl v => interp (l v) | inr v => interp (r v) end
     | Upd i s v => typeWithHole.upd (expr.interp s) (expr.interp i) (fun _ => expr.interp v)

@@ -394,7 +394,7 @@ Module eexpr.
     cbn [pack_struct type.pack_struct eexpr.interp expr.interp unop.interp binop.interp
       struct.drop unop.UnsignedResize fold_right fst snd struct_wf]; intros.
     destruct pf as [[Hwf_t Hfield] Hwf_r].
-    rewrite unsigned_resize_id.
+    (* rewrite unsigned_resize_id. *)
     (* rewrite bits.unsigned_app; [ | eapply sum_size_nonneg; eauto | apply size_nonneg; auto ]. *)
     (* rewrite IH with (pf:=Hwf_r) by auto. rewrite Hpack. *)
     (* rewrite bits.unsigned_app; [ | eapply sum_size_nonneg; eauto | apply size_nonneg; auto ]. *)
