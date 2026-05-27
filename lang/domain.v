@@ -1,27 +1,28 @@
 #[export] Set Primitive Projections.
-From Stdlib Require Import BinInt Bits Eqdep.
+From Stdlib Require Import BinInt Eqdep.
 From Stdlib Require Import String List HexString DecimalString.
 From Stdlib Require Vector.
 Import ListNotations.
+From stdpp Require Import bitvector.definitions.
 
-Module Import Zmod.
-  Coercion embed_bool (b : bool) : Zmod 2 := Zmod.of_Z _ (Z.b2z b).
-  Coercion nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero).
-  Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed.
-  Inductive Cases2 : Zmod 2 -> Prop :=
-  | Cases2_0 : Cases2 (Zmod.mk 2 0 I) | Cases2_1 : Cases2 (Zmod.mk 2 1 I).
-  Lemma cases2 (x : Zmod 2) : Cases2 x.
-  Proof. destruct (Zmod.in_elements x ltac:(inversion 1)); intuition subst; constructor. Qed.
-  Inductive BoolCases : Zmod 2 -> Prop :=
-  | BoolTrue : BoolCases true | BoolFalse : BoolCases false.
-  Lemma bool_cases (b : Zmod 2) : BoolCases b.
-  Proof. destruct (Zmod.in_elements b ltac:(inversion 1)); intuition subst; constructor. Qed.
-End Zmod.
+(* Module Import Zmod. *)
+(*   Coercion embed_bool (b : bool) : Zmod 2 := Zmod.of_Z _ (Z.b2z b). *)
+(*   Coercion nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero). *)
+(*   Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed. *)
+(*   Inductive Cases2 : Zmod 2 -> Prop := *)
+(*   | Cases2_0 : Cases2 (Zmod.mk 2 0 I) | Cases2_1 : Cases2 (Zmod.mk 2 1 I). *)
+(*   Lemma cases2 (x : Zmod 2) : Cases2 x. *)
+(*   Proof. destruct (Zmod.in_elements x ltac:(inversion 1)); intuition subst; constructor. Qed. *)
+(*   Inductive BoolCases : Zmod 2 -> Prop := *)
+(*   | BoolTrue : BoolCases true | BoolFalse : BoolCases false. *)
+(*   Lemma bool_cases (b : Zmod 2) : BoolCases b. *)
+(*   Proof. destruct (Zmod.in_elements b ltac:(inversion 1)); intuition subst; constructor. Qed. *)
+(* End Zmod. *)
 
 Module bits.
-  Definition hex {n : Z} (v : bits n) : string :=
-    NilZero.string_of_int (Z.to_int n) ++ "'h" ++
-    let s := HexString.of_Z (Zmod.unsigned v) in
+  Definition hex {n : N} (v : bv n) : string :=
+    NilZero.string_of_int (N.to_int n) ++ "'h" ++
+    let s := HexString.of_Z (bv_unsigned v) in
     String.substring 2 (String.length s - 2) s.
 End bits.
 
@@ -30,17 +31,17 @@ Module Vector.
   Context {A : Type}.
   Fixpoint upd {n} (xs : Vector.t A n) (i : nat) (f : A -> A) : Vector.t A n :=
     match xs in Vector.t _ n return Vector.t A n with
-    | Vector.nil _ => Vector.nil _
-    | Vector.cons _ x _ xs =>
+    | Vector.nil => Vector.nil 
+    | Vector.cons x xs =>
       match i with
-      | O => Vector.cons _ (f x) _ xs
-      | S i => Vector.cons _ x _ (upd xs  i f)
+      | O => Vector.cons (f x) xs
+      | S i => Vector.cons x (upd xs  i f)
       end
     end.
   Definition tl {n} (v : Vector.t A n) : Vector.t A (Nat.pred n) :=
     match v with
-    | Vector.nil _ => Vector.nil _
-    | Vector.cons _ a _ v => v
+    | Vector.nil => Vector.nil 
+    | Vector.cons a v => v
     end.
   Fixpoint unappr {i n} {struct i} : forall (v : Vector.t A (i+n)), Vector.t A n :=
     match i with

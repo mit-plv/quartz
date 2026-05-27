@@ -1,5 +1,5 @@
 (*! sv:reject *)
-From Stdlib Require Import BinInt Bits.
+From Stdlib Require Import BinInt.
 Require Import quartz.lang.Syntax. Import type.
 Import (notations) type expr eexpr.
 

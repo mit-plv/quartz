@@ -1,5 +1,6 @@
 From Ltac2 Require Import Ltac2.
-From Stdlib Require Import BinInt Bits.
+From stdpp Require Import bitvector.definitions.
+From Stdlib Require Import BinInt.
 Require Import quartz.lang.Syntax. Import type.
 Import (notations) type expr eexpr.
 
@@ -37,11 +38,11 @@ Definition test_all_ops_inner {var} := @fn.Fn var type.Unit (type.reify'' AllOps
       let rec <- #rec .. r_srs = (#a .>> (#rec .. r_ur)) in
       let rec <- #rec .. r_mul_full  = $(expr.Binop (@binop.Mul 32 32 64) (expr.Var a) (expr.Var b)) in
       let rec <- #rec .. r_mul_same  = $(expr.Binop (@binop.Mul 32 32 32) (expr.Var a) (expr.Var b)) in
-      let m1 := $(expr.Const (t:=Bits 16) (Zmod.of_Z _ (-1))) in
+      let m1 := $(expr.Const (t:=Bits 16) (Z_to_bv _ (-1)%Z)) in
       let rec <- #rec .. r_mul_no_integer_promotion  = $(expr.Binop (@binop.Mul 16 16 32) (expr.Var m1) (expr.Var m1)) in
       let rec <- #rec .. r_mul_small_big  = $(expr.Binop (@binop.Mul 16 32 40) (expr.Var s) (expr.Var b)) in
       let rec <- #rec .. r_mul_big_small  = $(expr.Binop (@binop.Mul 32 16 40) (expr.Var a) (expr.Var s)) in
-      let rec <- #rec .. r_mul_trunc  = $(expr.Binop (@binop.Mul 32 16 8) (expr.Var a) (expr.Const (t:=Bits _) (bits.of_Z _ (-7)))) in
+      let rec <- #rec .. r_mul_trunc  = $(expr.Binop (@binop.Mul 32 16 8) (expr.Var a) (expr.Const (t:=Bits _) (Z_to_bv _ (-7)%Z))) in
       let rec <- #rec .. r_eq  = (#a == #b) in
       let rec <- #rec .. r_lt  = (#a < #b) in
       let rec <- #rec .. r_gt  = (#a > #b) in

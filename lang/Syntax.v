@@ -233,7 +233,6 @@ Module binop.
   | MkPair {a b: type} : binop a b (Pair a b)
   | App {n m} : binop (Bits n) (Bits m) (Bits (n + m)).
   Open Scope bv_scope.
-
   Definition interp {a b c} (op: binop a b c) : a -> b -> c :=
     match op in binop a b c return a -> b -> c with
     | Add => bv_add
@@ -244,7 +243,7 @@ Module binop.
     | Sru => fun a b => Z_to_bv _ ((bv_unsigned a ≫ bv_unsigned b))
     | Srs => fun a b => Z_to_bv _ (bv_signed a ≫ (bv_unsigned b))
     | @Mul _ _ z => fun a b => Z_to_bv z (Z.mul (bv_unsigned a) (bv_unsigned b))
-    | EqBits => fun a b => bool_to_bv _ (bool_decide (a = b))
+    | EqBits => fun a b => bool_to_bv _ (bv_unsigned a =? bv_unsigned b)%Z
     | Compare signed c => fun a b =>
         match c with cLt => Z.ltb | cGt => Z.gtb | cLe => Z.leb | cGe => Z.geb end
         (if signed then bv_signed a else bv_unsigned a)

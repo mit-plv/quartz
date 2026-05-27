@@ -1,4 +1,5 @@
-From Stdlib Require Import BinInt Bits.
+From stdpp Require Import bitvector.definitions.
+From Stdlib Require Import BinInt.
 Require Import quartz.lang.Syntax. Import type.
 Import (notations) type expr eexpr.
 
