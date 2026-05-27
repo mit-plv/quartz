@@ -200,7 +200,7 @@ Module unop.
   Open Scope bv_scope.
   Definition interp {a b} (op: unop a b) : type.interp a -> type.interp b :=
     match op in unop a b return a -> b with
-    | IsZero => fun v => bool_to_bv _ (bool_decide (v = bv_0 _))
+    | IsZero => fun v => bool_to_bv _ (bv_unsigned v =? 0 )%Z
     | Not => bv_not 
     | Opp => fun v => - v
     | Resize signed =>
@@ -730,7 +730,7 @@ Module fifo1. Section fifo1.
   Coercion rep (v : state) : type.reify'' state :=
     ltac2:(let t := struct.rep &v in exact $t).
 
-  Lemma empty_ok (s : state) : fn.interp empty s = bool_decide (s.(valid) = bv_0 _).
+  Lemma empty_ok (s : state) : fn.interp empty s = (bv_unsigned s.(valid) =? 0)%Z.
   Proof. trivial. Qed.
 
   Lemma not_full_and_empty (st : state) :
