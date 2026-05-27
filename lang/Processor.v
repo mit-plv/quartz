@@ -1,20 +1,20 @@
 #[export] Set Primitive Projections.
+From stdpp Require Import bitvector.definitions (* vector *).
 
 From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
 
-From quartz.lang Require Import domain Syntax. Import (coercions) domain.Zmod.
-From Stdlib Require Import BinInt Bits.
+From quartz.lang Require Import domain Syntax. (* Import (coercions) domain.Zmod. *)
+From Stdlib Require Import BinInt.
 From Stdlib Require Import String List.
 From Stdlib Require NArith Vector.
-Import ListNotations.
+(* Import ListNotations. *)
 
 From quartz.lang Require Import ident_to_string let_lift.
 
 Module InterfaceExample.
 Import fn.
 Import type.
-Open Scope Z_scope.
-From stdpp Require Import base bitvector.definitions vector.
+(* Open Scope Z_scope. *)
 
 (* TODO: sum types? *)
 
@@ -276,7 +276,7 @@ Record RfScored {t_state t_data : type} := {
 End RfScored. End RfScored. Notation RfScored := RfScored.RfScored (only parsing).
 Module rfScored. 
   (* TODO: non-record type *)
-  Notation state' t_data nregs := (Vector.t (Bool * t_data) nregs).
+  Notation state' t_data nregs := (vector.vec (Bool * t_data) nregs).
   Section rfScored.
   Context {var: type -> Type}.
   Context {log_nregs: N}.
@@ -349,13 +349,13 @@ Module Bht.
 End Bht. Notation Bht := Bht.Bht (only parsing).
 
 Module bht. Section bht.
-  Notation histLen := 2%Z.
-  Context {idxSz : Z}.
-  Notation lenHist := (2%Z).              
+  Notation histLen := 2%N.
+  Context {idxSz : N}.
+  Notation lenHist := (2%N).              
   Context {var: type -> Type}.
-  Context {addrSz: Z}.
+  Context {addrSz: N}.
 
-  Definition nEntries : nat := Z.to_nat (2^idxSz).
+  Definition nEntries : nat := N.to_nat (2^idxSz).
 
   Notation state := (Vector.t (Bits histLen) nEntries).
   Definition State := type.reify'' state.
@@ -421,11 +421,11 @@ Module Btb.
 End Btb. Notation Btb := Btb.Btb (only parsing).
 
 Module btb. Section btb.
-  Context {addrSz: Z}.              
-  Context {tagSz: Z}.              
-  Context {idxSz: Z}.
+  Context {addrSz: N}.              
+  Context {tagSz: N}.              
+  Context {idxSz: N}.
 
-  Definition nEntries : nat := Z.to_nat (2^idxSz).
+  Definition nEntries : nat := N.to_nat (2^idxSz).
              
   Record state := { targets: Vector.t (Bits addrSz) nEntries;
                     tags : Vector.t (Bits tagSz) nEntries;
@@ -438,7 +438,7 @@ Module btb. Section btb.
   Let getIndex {var} : fn _ _ (Bits idxSz) := 
       @QStdlib.ExtractBits var addrSz 2 idxSz.  
   Let getTag {var} : fn _ _ (Bits tagSz) := 
-      @QStdlib.ExtractBits var addrSz (addrSz - tagSz) tagSz. 
+      @QStdlib.ExtractBits var addrSz (Z.of_N (addrSz - tagSz)) tagSz. 
 
   Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     return #pc + (_ 'd 4))).
@@ -495,11 +495,11 @@ End CsrFile. Notation CsrFile := CsrFile.CsrFile (only parsing).
 Module csrFile. Section csrFile.
   Notation CsrIdx := (Bits 12) (only parsing).
   Notation mword := (Bits 32).
-  Definition CSR_mtvec : CsrIdx := Zmod.of_Z _ 773.
-  Definition CSR_mepc : CsrIdx := Zmod.of_Z _ 833.
-  Definition CSR_mcause : CsrIdx := Zmod.of_Z _ 834.
-  Definition CSR_mtval : CsrIdx := Zmod.of_Z _ 835.
-  Definition CSR_mie : CsrIdx := Zmod.of_Z _ 0x304. 
+  Definition CSR_mtvec : CsrIdx := Z_to_bv _ 773.
+  Definition CSR_mepc : CsrIdx := Z_to_bv _ 833.
+  Definition CSR_mcause : CsrIdx := Z_to_bv _ 834.
+  Definition CSR_mtval : CsrIdx := Z_to_bv _ 835.
+  Definition CSR_mie : CsrIdx := Z_to_bv _ 0x304. 
 
   Record state := { csr_mtvec : mword;
                     csr_mepc : mword;
@@ -553,20 +553,20 @@ Module Decode. Section Decode.
   Notation RegIdx := (Bits 5) (only parsing).
 
   Notation ImmType := (Bits 3) (only parsing).
-  Definition Imm_none : ImmType := Zmod.of_Z _ 0.
-  Definition Imm_I : ImmType    := Zmod.of_Z _ 1.
-  Definition Imm_S : ImmType    := Zmod.of_Z _ 2.
-  Definition Imm_B : ImmType    := Zmod.of_Z _ 3.
-  Definition Imm_U : ImmType    := Zmod.of_Z _ 4.
+  Definition Imm_none : ImmType := Z_to_bv _ 0.
+  Definition Imm_I : ImmType    := Z_to_bv _ 1.
+  Definition Imm_S : ImmType    := Z_to_bv _ 2.
+  Definition Imm_B : ImmType    := Z_to_bv _ 3.
+  Definition Imm_U : ImmType    := Z_to_bv _ 4.
 
   Notation InstType := (Bits 3) (only parsing).
-  Definition Inst_Illegal : InstType := Zmod.of_Z _ 0.
-  Definition Inst_Store : InstType   := Zmod.of_Z _ 1.
-  Definition Inst_Load : InstType    := Zmod.of_Z _ 2.
-  Definition Inst_Mul : InstType     := Zmod.of_Z _ 3.
-  Definition Inst_Alu : InstType     := Zmod.of_Z _ 4.
-  Definition Inst_Ctrl : InstType    := Zmod.of_Z _ 5.
-  Definition Inst_System : InstType  := Zmod.of_Z _ 6.
+  Definition Inst_Illegal : InstType := Z_to_bv _ 0.
+  Definition Inst_Store : InstType   := Z_to_bv _ 1.
+  Definition Inst_Load : InstType    := Z_to_bv _ 2.
+  Definition Inst_Mul : InstType     := Z_to_bv _ 3.
+  Definition Inst_Alu : InstType     := Z_to_bv _ 4.
+  Definition Inst_Ctrl : InstType    := Z_to_bv _ 5.
+  Definition Inst_System : InstType  := Z_to_bv _ 6.
 
   Record instrProps :=
   { rs1Valid : Bool;
@@ -674,25 +674,25 @@ Module Decode. Section Decode.
     return #ret
   )).
 
-  Definition opcode_LOAD : Bits 7 := Zmod.of_Z _ 3.
-  Definition opcode_OP_IMM : Bits 7 := Zmod.of_Z _ 19.
-  Definition opcode_AUIPC : Bits 7 := Zmod.of_Z _ 23.
-  Definition opcode_STORE : Bits 7 := Zmod.of_Z _ 35.
-  Definition opcode_OP : Bits 7 := Zmod.of_Z _ 51.
-  Definition opcode_BRANCH : Bits 7 := Zmod.of_Z _ 99.
-  Definition opcode_JALR : Bits 7 := Zmod.of_Z _ 103.
-  Definition opcode_SYSTEM : Bits 7 := Zmod.of_Z _ 115.
+  Definition opcode_LOAD : Bits 7 := Z_to_bv _ 3.
+  Definition opcode_OP_IMM : Bits 7 := Z_to_bv _ 19.
+  Definition opcode_AUIPC : Bits 7 := Z_to_bv _ 23.
+  Definition opcode_STORE : Bits 7 := Z_to_bv _ 35.
+  Definition opcode_OP : Bits 7 := Z_to_bv _ 51.
+  Definition opcode_BRANCH : Bits 7 := Z_to_bv _ 99.
+  Definition opcode_JALR : Bits 7 := Z_to_bv _ 103.
+  Definition opcode_SYSTEM : Bits 7 := Z_to_bv _ 115.
 
-  Definition funct3_LW : Bits 3 := Zmod.of_Z _ 2.
-  Definition funct3_ADDI : Bits 3 := Zmod.of_Z _ 0.
-  Definition funct3_SW : Bits 3 := Zmod.of_Z _ 2.
-  Definition funct3_ADD : Bits 3 := Zmod.of_Z _ 0.
-  Definition funct7_ADD : Bits 7 := Zmod.of_Z _ 0.
-  Definition funct3_MUL : Bits 3 := Zmod.of_Z _ 0.
-  Definition funct7_MUL : Bits 7 := Zmod.of_Z _ 1.
-  Definition funct3_BEQ : Bits 3 := Zmod.of_Z _ 0.
-  Definition funct3_JALR : Bits 3 := Zmod.of_Z _ 0.
-  Definition funct3_CSRRW : Bits 3 := Zmod.of_Z _ 1.
+  Definition funct3_LW : Bits 3 := Z_to_bv _ 2.
+  Definition funct3_ADDI : Bits 3 := Z_to_bv _ 0.
+  Definition funct3_SW : Bits 3 := Z_to_bv _ 2.
+  Definition funct3_ADD : Bits 3 := Z_to_bv _ 0.
+  Definition funct7_ADD : Bits 7 := Z_to_bv _ 0.
+  Definition funct3_MUL : Bits 3 := Z_to_bv _ 0.
+  Definition funct7_MUL : Bits 7 := Z_to_bv _ 1.
+  Definition funct3_BEQ : Bits 3 := Z_to_bv _ 0.
+  Definition funct3_JALR : Bits 3 := Z_to_bv _ 0.
+  Definition funct3_CSRRW : Bits 3 := Z_to_bv _ 1.
 
   Definition getInstrProps {var} : fn var _ InstrProps := Fn (fun (inst: var mword) => quartz_eexpr:(
     let opcode := Opcode ( #inst ) in
@@ -842,10 +842,10 @@ Module Decode. Section Decode.
   Let is_word_aligned {var} : fn var _ Bool := Fn (fun (addr: var mword) => quartz_eexpr:(
     return (#addr & (_ 'd 3)) == _ 'd 0)).
 
-  Definition EXN_InstructionAddressMisaligned : mword := Zmod.of_Z _ 0.
-  Definition EXN_IllegalInstruction : mword := Zmod.of_Z _ 2.
-  Definition EXN_LoadAddressMisaligned : mword := Zmod.of_Z _ 4.
-  Definition EXN_StoreAddressMisaligned : mword := Zmod.of_Z _ 6.
+  Definition EXN_InstructionAddressMisaligned : mword := Z_to_bv _ 0.
+  Definition EXN_IllegalInstruction : mword := Z_to_bv _ 2.
+  Definition EXN_LoadAddressMisaligned : mword := Z_to_bv _ 4.
+  Definition EXN_StoreAddressMisaligned : mword := Z_to_bv _ 6.
 
   Record ctrlInput :=
   { ctrl_in_flds: DecodeFields;
@@ -978,7 +978,7 @@ Module CPU.
 End CPU. Notation Cpu := CPU.Cpu (only parsing).
 
 Module cpu. 
-  Notation width := 32.
+  Notation width := 32%N.
   Notation mword := (Bits width).
   Section cpuTypes.
     Record mem_req_t := { mem_req_is_store : Bool; 
@@ -1029,14 +1029,14 @@ Module cpu.
     ltac2:(let t := struct.rep &v in exact $t).
 
   Section cpu.
-    Context {mul_LogNSteps: Z}.
-    Context {bht_idxSz: Z}.
-    Context {btb_tagSz: Z}.
-    Context {btb_idxSz: Z}.
+    Context {mul_LogNSteps: N}.
+    Context {bht_idxSz: N}.
+    Context {btb_tagSz: N}.
+    Context {btb_idxSz: N}.
     Parameter (isMMIOAddr : forall {var}, fn var mword Bool).
 
-    Definition log_nregs : Z := 5.
-    Definition nregs : nat := Z.to_nat (2^log_nregs).
+    Definition log_nregs : N := 5.
+    Definition nregs : nat := N.to_nat (2^log_nregs).
     Record state : Type :=
     { Pc : mword
     ; Epoch : Bool
@@ -1104,7 +1104,7 @@ Module cpu.
     Lemma struct_test_ok (st : state) :
       fn.interp struct_test st = {| mem_req_is_store := true; 
                                     mem_req_addr := st.(Pc);
-                                    mem_req_data := Zmod.zero |}.
+                                    mem_req_data := (bv_0 _) |}.
     Proof.
       reflexivity.
     Qed.
