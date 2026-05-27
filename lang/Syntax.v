@@ -10,7 +10,7 @@ From stdpp Require Import base bitvector.definitions vector.
 (* Open Scope Z_scope. *)
 Module Import BV.
   Coercion embed_bool (b : bool) : bv 1 := bool_to_bv _ b.
-  Coercion nonzero {m} (x : bv m) : bool := negb (bool_decide (x = bv_0 _)).
+  Coercion nonzero {m} (x : bv m) : bool := negb (bv_unsigned x =? 0)%Z.
   Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed.
   Inductive Cases2 : bv 1 -> Prop :=
   | Cases2_0 : Cases2 (bv_0 _) | Cases2_1 : Cases2 (Z_to_bv _ 1).
