@@ -138,8 +138,9 @@ Module fifo1. Section fifo1.
   Proof. trivial. Qed.
 
   Lemma empty_ok (s : state) : fn.interp empty s = 
-                                 bool_decide (s.(valid) = bv_0 _).
-  Proof. trivial. Qed.
+                                 (bv_unsigned s.(valid) =? 0)%Z.
+  Proof. 
+trivial. Qed.
 
   Lemma enq_ok (s : state) x :
     fn.interp full s = false ->
