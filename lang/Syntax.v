@@ -13,16 +13,17 @@ Module Import BV.
   Coercion nonzero {m} (x : bv m) : bool := negb (bv_unsigned x =? 0)%Z.
   Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed.
   Inductive Cases2 : bv 1 -> Prop :=
-  | Cases2_0 : Cases2 (bv_0 _) | Cases2_1 : Cases2 (Z_to_bv _ 1).
+  | Cases2_0 : Cases2 (Z_to_bv _ 0) | Cases2_1 : Cases2 (Z_to_bv _ 1).
   Lemma cases2 (x : bv 1) : Cases2 x.
   Proof.
-    destruct (decide (x = bv_0 _)) as [->|Hne].
+    destruct (decide (x = Z_to_bv _ 0)) as [->|Hne].
     - constructor.
     - enough (x = Z_to_bv 1 1) as -> by constructor.
       apply (proj2 (bv_eq _ _ _)).
       assert (Hne' : bv_unsigned x ≠ 0%Z).
       { intro He. apply Hne. apply (proj2 (bv_eq _ _ _)).
-        rewrite bv_0_unsigned. exact He. }
+        rewrite Z_to_bv_unsigned. exact He.
+        }
       assert (Heq : bv_unsigned (Z_to_bv 1 1) = 1%Z) by
         (apply Z_to_bv_small; unfold bv_modulus; simpl; lia).
       rewrite Heq.
@@ -34,7 +35,7 @@ Module Import BV.
   Lemma bool_cases (b : bv 1) : BoolCases b.
   Proof.
     destruct (cases2 b).
-    - enough (embed_bool false = bv_0 1%N) as H by (rewrite <- H; exact BoolFalse).
+    - enough (embed_bool false = Z_to_bv _ 0) as H by (rewrite <- H; exact BoolFalse).
       apply (proj2 (bv_eq _ _ _)).
       vm_compute. reflexivity.
     - exact BoolTrue.
@@ -87,7 +88,7 @@ Module type.
   End WithDefault.
   Fixpoint default (t : type) : t :=
     match t return t with
-    | Bits sz => bv_0 _
+    | Bits sz => Z_to_bv _ 0
     | Pair a b => (default a, default b)
     | Either a b => inl (default a) (* TODO: confirm this *)
     | Struct _ s => default_struct default s
