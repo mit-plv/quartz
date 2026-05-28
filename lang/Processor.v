@@ -1105,7 +1105,7 @@ Module cpu.
     Lemma struct_test_ok (st : state) :
       fn.interp struct_test st = {| mem_req_is_store := true; 
                                     mem_req_addr := st.(Pc);
-                                    mem_req_data := (bv_0 _) |}.
+                                    mem_req_data := (Z_to_bv _ 0) |}.
     Proof.
       reflexivity.
     Qed.
