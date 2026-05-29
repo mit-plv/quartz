@@ -626,11 +626,11 @@ Module Decode. Section Decode.
   Let ImmB {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
   let imm_bit31 : Bits 1 := { ExtractBits 31 } ( #inst ) in
   let imm_bit7 : Bits 1 := { ExtractBits 7 } ( #inst ) in
-  let imm_bits25_6 : Bits 6 := { ExtractBits 25 } ( #inst ) in
-  let imm_bits8_4 : Bits 4 := { ExtractBits 8 } ( #inst ) in
   let imm_bits12_11 : Bits 2 := QStdlib.Concat ((#imm_bit31, #imm_bit7)) in
-  let imm_bits10_1 : Bits 10 := QStdlib.Concat ((#imm_bits25_6, #imm_bits8_4)) in
-  let imm_bits12_1 : Bits 12 := QStdlib.Concat ((#imm_bits12_11, #imm_bits10_1)) in
+  let imm_bits25_6 : Bits 6 := { ExtractBits 25 } ( #inst ) in
+  let imm_bits8 : Bits 8 := QStdlib.Concat ((#imm_bits12_11, #imm_bits25_6)) in
+  let imm_bits8_4 : Bits 4 := { ExtractBits 8 } ( #inst ) in
+  let imm_bits12_1 : Bits 12 := QStdlib.Concat ((#imm_bits8, #imm_bits8_4)) in
   let imm_bit0 : Bits 1 := _ 'd 0 in
   let imm13 : Bits 13 := QStdlib.Concat ((#imm_bits12_1, #imm_bit0)) in
   return $(expr.Unop unop.SignedResize (expr.Var imm13))
@@ -638,9 +638,8 @@ Module Decode. Section Decode.
 
   Let ImmU {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
   let u20 : Bits 20 := {ExtractBits 12} ( #inst ) in
-  let z12 : Bits 12 := _ 'd 0 in
-  let imm32 : Bits 32 := Concat ((#u20, #z12)) in
-  return #imm32
+  let s20 : Bits 32 := $(expr.Unop unop.SignedResize (expr.Var u20)) in
+  return (Var s0) << 12
   )).
 
   (* Bundles all raw instruction fields; mirrors [griffin/isaSpec/IsaParams.v:getFields]. *)
