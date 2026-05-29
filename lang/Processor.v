@@ -897,7 +897,7 @@ Module Decode. Section Decode.
           let isAligned := is_word_aligned (#nextPC) in 
           init_struct CtrlOutput { ctrl_out_taken := #taken;
                                    ctrl_out_pc := (if #taken then #nextPC else nextPc (#pc));
-                                   ctrl_out_isExn := ~#isAligned;
+                                   ctrl_out_isExn := #taken & ~#isAligned;
                                    ctrl_out_exnCode := const EXN_InstructionAddressMisaligned;
                                    ctrl_out_mtval := #nextPC}
       else
@@ -1088,6 +1088,8 @@ Module cpu.
     Notation rf_read := (RfScored.read (rfScored.impl _)).
     Notation rf_acquire := (RfScored.acquireLock (rfScored.impl _)).
     Notation rf_release := (RfScored.releaseLock (rfScored.impl _)).
+    Notation rf_writeAndRelease := (RfScored.writeAndRelease (rfScored.impl _)).
+
     Notation csr_read := (CsrFile.readCsr (csrFile.impl)).
     Notation csr_write := (CsrFile.writeCsr (csrFile.impl)).
     Notation bht_update := (Bht.update _ (bht.impl)).  
@@ -1321,19 +1323,20 @@ Module cpu.
           let st := #St_ExBook_IsExn.1 in 
           let ex_book := #St_ExBook_IsExn.2.1 in
           let isExn := #St_ExBook_IsExn.2.2 in
+          let _epoch := #st..Epoch in 
           let st <- #st..D2e = fifo1_deq (#st..D2e) in 
           let st <- #st..E2w = fifo1_enq ((#st..E2w , #ex_book)) in 
           let st <- if (#nextPC == #dbook..d2e_ppc) then
                      return #st
                    else
-                     let st <- #st..Epoch = ~#st..Epoch in
+                     let st <- #st..Epoch = ~#_epoch in
                      let st <- #st..Pc = #nextPC in 
                      let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #nextPC))) in 
                      return #st in 
           if #isExn then
             let trapHandlerAddr := csr_read ((#st..Csrs, const csrFile.CSR_mtvec)) in
             let st <- #st..Pc = #trapHandlerAddr in
-            let st <- #st..Epoch = ~#st..Epoch in 
+            let st <- #st..Epoch = ~#_epoch in 
             let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #trapHandlerAddr))) in 
             return #st
           else return #st
@@ -1355,8 +1358,8 @@ Module cpu.
         let st <- #st..Iepoch = ~(#st..Iepoch) in 
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mepc, #nextPc))) in
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mie, _ 'd 0))) in
-        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mtval, #st..InterruptSrc))) in
-        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mcause, _ 'd 0 ))) in
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mtval, _ 'd 0))) in
+        let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mcause, #st..InterruptSrc ))) in
         let st <- #st..Pc = #trapHandlerAddr in 
         return #st
       else return #st
@@ -1411,7 +1414,7 @@ Module cpu.
         let csr_data := #St_reg_csr.2.2 in
         let st <- #st..E2w = fifo1_deq(#st..E2w) in 
         let st <- if #props..rdValid then
-                   #st..Rf = rf_release ((#st..Rf, #flds..D_rdIdx)) 
+                   #st..Rf = rf_writeAndRelease ((#st..Rf, (#flds..D_rdIdx, #reg_data))) 
                  else return #st in  
         let st <- if (#props..itype == const Inst_System) then
                    #st..Csrs = csr_write((#st..Csrs, (#flds..D_csrIdx, #csr_data))) 
