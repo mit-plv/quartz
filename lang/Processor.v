@@ -635,11 +635,10 @@ Module Decode. Section Decode.
   let imm13 : Bits 13 := QStdlib.Concat ((#imm_bits12_1, #imm_bit0)) in
   return $(expr.Unop unop.SignedResize (expr.Var imm13))
   )).
-
   Let ImmU {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
   let u20 : Bits 20 := {ExtractBits 12} ( #inst ) in
   let s20 : Bits 32 := $(expr.Unop unop.SignedResize (expr.Var u20)) in
-  return (Var s0) << 12
+  return (#s20 << (32 'd 12))
   )).
 
   (* Bundles all raw instruction fields; mirrors [griffin/isaSpec/IsaParams.v:getFields]. *)
