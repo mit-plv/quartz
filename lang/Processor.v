@@ -1243,7 +1243,7 @@ Module cpu.
           return #st (* stall *)
         else
           let St_ExBook_IsExn <-
-            if (#props..itype == const Inst_Illegal) then 
+            if ~(#props..itype == const Inst_Illegal) then 
               if ( (#props..itype == const Inst_Store) 
                  | (#props..itype == const Inst_Load)) then (* isMem *)
                 let memOut := memAddr (((#flds, #props), #rval1)) in 
