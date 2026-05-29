@@ -22,25 +22,23 @@ Import (coercions) BV.
 Module QStdlib.
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Definition ExtractBits {var} {n} (s: Z) {l: N} : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
-    let shift_amt : Bits n := _ 'd s in
-    let shifted_b := #b >> #shift_amt in    
-    return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))).
+  Definition ExtractBits {var} {n} (s: N) {l: N} : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
+    return $(expr.Unop (unop.Slice s l) (expr.Var b)))).    
+
+    (* let shift_amt : Bits n := _ 'd s in *)
+    (* let shifted_b := #b >> #shift_amt in     *)
+    (* return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))). *)
 
   (* Concatenate bitvectors, matching [bv_concat sz hi lo] semantics.
      Result width is explicitly [sz] (typically [sz = hi_w + lo_w]).
    *)
   Definition Concat {var} {sz : N} {hi_w lo_w : N}
     : fn _ (type.Pair (Bits hi_w) (Bits lo_w)) (Bits sz) :=
-    let lo_w' := Z.of_N lo_w in 
-    Fn (fun p : var (type.Pair (Bits hi_w) (Bits lo_w)) => quartz_eexpr:(
+    (* let lo_w' := Z.of_N lo_w in  *)
+    Fn (fun (p : var (type.Pair (Bits hi_w) (Bits lo_w))) => quartz_eexpr:(
       let hi := #p .1 in
       let lo := #p .2 in
-      let hi' : Bits sz := $(expr.Unop unop.UnsignedResize (expr.Var hi)) in
-      let lo' : Bits sz := $(expr.Unop unop.UnsignedResize (expr.Var lo)) in
-      let sh : Bits sz := _ 'd lo_w' in
-      return ((#hi' << #sh) | #lo')
-    )).
+      return $(expr.Binop (binop.App sz) (expr.Var hi) (expr.Var lo)))).
 
   Declare Custom Entry quartz_struct_init.
 
@@ -439,7 +437,7 @@ Module btb. Section btb.
   Let getIndex {var} : fn _ _ (Bits idxSz) := 
       @QStdlib.ExtractBits var addrSz 2 idxSz.  
   Let getTag {var} : fn _ _ (Bits tagSz) := 
-      @QStdlib.ExtractBits var addrSz (Z.of_N (addrSz - tagSz)) tagSz. 
+      @QStdlib.ExtractBits var addrSz ((addrSz - tagSz)) tagSz. 
 
   Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     return #pc + (_ 'd 4))).

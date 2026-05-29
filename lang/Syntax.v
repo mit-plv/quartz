@@ -197,6 +197,7 @@ Module unop.
   | Resize (signed : bool) {n m} : unop (Bits n) (Bits m) (* zero-extend or truncate *)
   | Left {l r} : unop l (Either l r)
   | Right {l r} : unop r (Either l r)
+  | Slice {n} (s l: N) : unop (Bits n) (Bits l)
   .
   Open Scope bv_scope.
   Definition interp {a b} (op: unop a b) : type.interp a -> type.interp b :=
@@ -210,6 +211,7 @@ Module unop.
         else fun v => Z_to_bv _ (bv_unsigned v)
     | Left => inl
     | Right => inr
+    | Slice s l => fun v => bv_extract s l v
     end.
 
   Definition UnsignedResize {n m} := @Resize false n m.
@@ -232,7 +234,7 @@ Module binop.
   | EqBits {n} : binop (Bits n) (Bits n) Bool
   | Compare (signed: bool) (c: compare) {n} : binop (Bits n) (Bits n) Bool
   | MkPair {a b: type} : binop a b (Pair a b)
-  | App {n m} : binop (Bits n) (Bits m) (Bits (n + m)).
+  | App (sz: N) {n m} : binop (Bits n) (Bits m) (Bits sz).
   Open Scope bv_scope.
   Definition interp {a b c} (op: binop a b c) : a -> b -> c :=
     match op in binop a b c return a -> b -> c with
@@ -250,8 +252,8 @@ Module binop.
         (if signed then bv_signed a else bv_unsigned a)
         (if signed then bv_signed b else bv_unsigned b)
     | MkPair => Datatypes.pair
-    | @App n m => (* fun x y => *) (* TODO: check semantics *)
-              bv_concat (n + m)
+    | @App sz n m => (* fun x y => *) (* TODO: check semantics *)
+              bv_concat sz
     end.
 End binop.
 Notation binop := binop.binop (only parsing).
