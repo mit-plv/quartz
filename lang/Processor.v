@@ -884,7 +884,7 @@ Module Decode. Section Decode.
         else (* BEQ *)
           let taken := (#rs1val == #rs2val) in 
           let nextPC := #pc + #imm in 
-          let isAligned := is_word_aligned (#nextPC) in 
+          let isAligned := #taken & is_word_aligned (#nextPC) in 
           init_struct CtrlOutput { ctrl_out_taken := #taken;
                                    ctrl_out_pc := (if #taken then #nextPC else nextPc (#pc));
                                    ctrl_out_isExn := ~#isAligned;
@@ -1311,19 +1311,20 @@ Module cpu.
           let st := #St_ExBook_IsExn.1 in 
           let ex_book := #St_ExBook_IsExn.2.1 in
           let isExn := #St_ExBook_IsExn.2.2 in
+          let _epoch := ~#st..Epoch in 
           let st <- #st..D2e = fifo1_deq (#st..D2e) in 
           let st <- #st..E2w = fifo1_enq ((#st..E2w , #ex_book)) in 
           let st <- if (#nextPC == #dbook..d2e_ppc) then
                      return #st
                    else
-                     let st <- #st..Epoch = ~#st..Epoch in
+                     let st <- #st..Epoch = ~#_epoch in
                      let st <- #st..Pc = #nextPC in 
                      let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #nextPC))) in 
                      return #st in 
           if #isExn then
             let trapHandlerAddr := csr_read ((#st..Csrs, const csrFile.CSR_mtvec)) in
             let st <- #st..Pc = #trapHandlerAddr in
-            let st <- #st..Epoch = ~#st..Epoch in 
+            let st <- #st..Epoch = ~#_epoch in 
             let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #trapHandlerAddr))) in 
             return #st
           else return #st
