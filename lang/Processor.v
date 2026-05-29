@@ -691,6 +691,14 @@ Module Decode. Section Decode.
   Definition funct3_JALR : Bits 3 := Z_to_bv _ 0.
   Definition funct3_CSRRW : Bits 3 := Z_to_bv _ 1.
 
+  Definition lookupCSR {var} : fn var _ Bool := Fn (fun (csr : var (Bits 12)) => 
+    quartz_eexpr:(
+       return (#csr == const csrFile.CSR_mtvec) | 
+              (#csr == const csrFile.CSR_mepc) | 
+              (#csr == const csrFile.CSR_mcause) | 
+              (#csr == const csrFile.CSR_mtval) | 
+              (#csr == const csrFile.CSR_mie))).
+
   Definition getInstrProps {var} : fn var _ InstrProps := Fn (fun (inst: var mword) => quartz_eexpr:(
     let opcode := Opcode ( #inst ) in
     let funct3 := Funct3 ( #inst ) in
@@ -782,12 +790,14 @@ Module Decode. Section Decode.
     else 
     (* CSRRW: system *)
     if (#opcode == const opcode_SYSTEM) & (#funct3 == const funct3_CSRRW) then
-      init_struct InstrProps { 
-                    rs1Valid := true;
-                    rs2Valid := false;
-                    rdValid := true;
-                    itype := const Inst_System;
-                    immediateType := const Imm_none }
+      if lookupCSR (#csr12) then
+        init_struct InstrProps { 
+                      rs1Valid := true;
+                      rs2Valid := false;
+                      rdValid := true;
+                      itype := const Inst_System;
+                      immediateType := const Imm_none }
+       else return #illegal
     else
       return #illegal
   )).
