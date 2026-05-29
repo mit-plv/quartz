@@ -436,18 +436,19 @@ Module eexpr.
     clearbody v. destruct (ltac:(lia) : S i + r' = i + S r')%nat.
     cbn [pack_array type.pack_array eexpr.interp expr.interp unop.interp unop.UnsignedResize binop.interp]. cbv[LetBlock].
     rewrite Hpack. cbn [pack_array type.pack_array eexpr.interp expr.interp unop.interp unop.UnsignedResize binop.interp].
-    rewrite bv_concat_unsigned' at 1.
-    rewrite IH. cbn [typeWithHole.get fst]. cbv[bv_wrap bv_modulus].
-    rewrite Z_to_bv_unsigned, Z.mod_small. (* Nat2Z.id. *)
-    2: { split; [lia|]; apply Z.lt_le_trans with (Z.of_nat (S i + r'));
-         [lia | apply Z.log2_log2_up_spec; lia].}
-    2: { match goal with |- context [?F r'] => lazymatch type of F with nat -> Z =>
-           replace (F r') with (Init.Nat.iter r' (Z.add (size t)) 0) in * by trivial end end;
-         apply iter_nonneg; [lia | intros; pose proof (size_nonneg t twf); lia]. }
+    rewrite bv_concat_unsigned at 1 by (cbn [Nat.iter]; reflexivity).
+    rewrite IH. cbn [typeWithHole.get fst].
     assert (S i + r' - S r' = i)%nat as -> by lia.
+    rewrite Z_to_bv_unsigned, bv_wrap_small.
+    2: { split; [apply Zle_0_nat|]; apply Z.lt_le_trans with (Z.of_nat (S i + r')) ;[ lia | unfold bv_modulus ].
+         pose proof (N.log2_log2_up_spec (N.of_nat (S i + r'))) as H'.
+         destruct H'; [lia |].
+         lia.
+       }
+    rewrite Nat2Z.id.
     revert to_list_v; pattern v; refine (@Vector.caseS' t r' _ _ _); intros.
     cbn [type.pack_array].
-    rewrite bv_concat_unsigned'.
+    rewrite bv_concat_unsigned by (cbn [Nat.iter]; reflexivity).
     f_equal. f_equal.
     - f_equal. f_equal. setoid_rewrite (f_equal (List.hd (default t)) to_list_v).
       rewrite hd_skipn; trivial.
@@ -463,15 +464,19 @@ Module eexpr.
     { destruct (expr.interp e); trivial. }
     { rewrite IHt1, IHt2 by (inversion w; auto); trivial. }
     { destruct (expr.interp e); cbv[LetBlock]; rewrite ?IHt1, ?IHt2 by (inversion w; auto).
-      - rewrite !bv_concat_unsigned', Z_to_bv_unsigned, bv_0_unsigned.
+      - simpl. 
+        repeat rewrite !bv_concat_unsigned', Z_to_bv_unsigned. 
+        rewrite @bv_0_unsigned.
         replace (bv_wrap 1 0 : Z) with 0%Z by reflexivity.
         rewrite !Z.lor_0_r. f_equal. symmetry.
+        rewrite Z_to_bv_unsigned.
+        pose proof (bv_unsigned_in_range _ (type.pack i)).
+        rewrite bv_wrap_small; auto.
+        split; [ lia | ].
+        apply Z.lt_le_trans with (bv_modulus (size t1)); [lia | apply bv_modulus_le_mono, N.le_max_l].
+      - simpl. rewrite !bv_concat_unsigned', Z_to_bv_unsigned. f_equal. f_equal. f_equal. symmetry.
         apply bv_wrap_small.
-        pose proof (bv_unsigned_in_range _ (type.pack v)).
-        split; [lia | apply Z.lt_le_trans with (bv_modulus (size t1)); [lia | apply bv_modulus_le_mono, N.le_max_l]].
-      - rewrite !bv_concat_unsigned', Z_to_bv_unsigned. f_equal. f_equal. f_equal. symmetry.
-        apply bv_wrap_small.
-        pose proof (bv_unsigned_in_range _ (type.pack v)).
+        pose proof (bv_unsigned_in_range _ (type.pack i)).
         split; [lia | apply Z.lt_le_trans with (bv_modulus (size t2)); [lia | apply bv_modulus_le_mono, N.le_max_r]].
     }
     { setoid_rewrite interp_pack_struct; trivial. }
@@ -501,34 +506,3 @@ Module fns.
       ffns a b (map (@eexpr.rmap var fn fe fee) (@rmap) fs).
   End rmap.
 End fns.
-(* 1 goal (ID 436) *)
-  
-(*   t : type *)
-(*   twf : wf t *)
-(*   pack : *)
-(*     Syntax.expr type.interp interpfn t → eexpr type.interp interpfn (Bits (size t)) *)
-(*   Hpack : *)
-(*     ∀ e : Syntax.expr type.interp interpfn t, *)
-(*       interp (pack e) = type.pack (expr.interp e) *)
-(*   r' : nat *)
-(*   IH : *)
-(*     ∀ (i : nat) (e : Syntax.expr type.interp interpfn (Array t (i + r'))), *)
-(*       bv_unsigned (interp (pack_array pack (i + r') e r')) = *)
-(*       bv_unsigned (type.pack_array (@type.pack) r' (Vector.unappr (expr.interp e))) *)
-(*   i : nat *)
-(*   e : Syntax.expr type.interp interpfn (Array t (S i + r')) *)
-(*   v : Vector.t t (S r') *)
-(*   to_list_v : Vector.to_list v = skipn i (Vector.to_list (expr.interp e)) *)
-(*   ============================ *)
-(*   (0 *)
-(*    ≤ Z.lor *)
-(*        (bv_unsigned *)
-(*           (type.pack *)
-(*              (nth_default (default t) (Vector.to_list (expr.interp e)) *)
-(*                 (Z.to_nat *)
-(*                    (bv_wrap (N.log2_up (N.of_nat (S i + r'))) *)
-(*                       (Z.of_nat (S i + r' - S r')))))) *)
-(*         ≪ Z.of_N (Nat.iter r' (N.add (size t)) 0%N)) *)
-(*        (bv_unsigned *)
-(*           (type.pack_array (@type.pack) r' (Vector.unappr (expr.interp e)))) < *)
-(*    2 ^ Z.of_N (Nat.iter (S r') (N.add (size t)) 0%N))%Z *)

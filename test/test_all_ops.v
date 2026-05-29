@@ -19,7 +19,7 @@ Definition rep_all_ops (v : AllOpsRecord) : type.interp (type.reify'' AllOpsReco
 Definition test_all_ops_inner {var} := @fn.Fn var type.Unit (type.reify'' AllOpsRecord) (fun _ =>
     quartz_eexpr:(
       let x := $(expr.Const (t:=type.Unit) (type.default _)) in
-      let x2 := #x ++ #x in
+      let x2 : Bits 0 := (#x ++ #x) in
       let a := 32 'd 0xdeadbeef in
       let b := 32 'd 0xbad1dea5 in
       let rec := $(expr.Const (t:=type.reify'' AllOpsRecord) (type.default _)) in

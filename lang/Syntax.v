@@ -425,7 +425,7 @@ Module expr.
   Notation "e1 .> e2" := (expr.Binop (binop.Compare Datatypes.true binop.cGt) e1 e2) (in custom quartz_expr at level 70, no associativity).
   Notation "e1 .>= e2" := (expr.Binop (binop.Compare Datatypes.true binop.cGe) e1 e2) (in custom quartz_expr at level 70, no associativity).
 
-  Notation "e1 ++ e2" := (expr.Binop binop.App e1 e2) (in custom quartz_expr at level 50, left associativity).
+  Notation "e1 ++ e2" := (expr.Binop (binop.App _) e1 e2) (in custom quartz_expr at level 50, left associativity).
 
   Notation "'if' cond 'then' a 'else' b" := (expr.If cond a b)
     (in custom quartz_expr at level 200, cond custom quartz_expr at level 200, a custom quartz_expr at level 200, b custom quartz_expr at level 200).
