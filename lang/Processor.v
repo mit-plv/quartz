@@ -1040,7 +1040,7 @@ Module cpu.
     Context {bht_idxSz: N}.
     Context {btb_tagSz: N}.
     Context {btb_idxSz: N}.
-    Parameter (isMMIOAddr : forall {var}, fn var mword Bool).
+    Context (isMMIOAddr : forall {var}, fn var mword Bool).
 
     Definition log_nregs : N := 5.
     Definition nregs : nat := N.to_nat (2^log_nregs).
@@ -1221,7 +1221,9 @@ Module cpu.
                             e2w_isMMIO := false;
                             e2w_nextPc := _ 'd 0 })).
 
-    Definition execute_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
+    Definition execute_stage {var} := 
+      let isMMIOAddr := (@isMMIOAddr var) in 
+      Fn (fun (st : var State) => quartz_eexpr:(
       let dbook := fifo1_first (#st..D2e) in
       let inst := #dbook..d2e_inst in
       let _pc := #dbook..d2e_pc in 
