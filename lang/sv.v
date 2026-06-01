@@ -199,7 +199,7 @@ Module sv.
         let e2_s := if signed then "$signed("++e2_str++")" else e2_str in
         "("++e1_s++" "++op_str++" "++e2_s++")"
     | @binop.MkPair a b => "Pair#("++pp_type a++", "++pp_type b++")::mk("++e1_str++", "++e2_str++")"
-    | @binop.App n m => "{"++e2_str++", "++e1_str++"}"
+    | @binop.App sz n m => pp_N sz ++ "'({"++e2_str++", "++e1_str++"})"
     end.
 
   Fixpoint pp_expr {t} (e : expr.expr var fn t) : string :=

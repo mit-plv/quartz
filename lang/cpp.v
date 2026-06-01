@@ -161,7 +161,7 @@ Module cpp.
         let e2_s := if signed then "((signed _BitInt("++pp_N n++"))"++e2_str++")" else e2_str in
         "("++e1_s++" "++op_str++" "++e2_s++")"
     | @binop.MkPair a b => "std::make_pair("++e1_str++", "++e2_str++")"
-    | @binop.App n m => "((unsigned _BitInt("++pp_N (n+m)++"))(((unsigned _BitInt("++pp_N (n+m)++"))"++e2_str++") << "++pp_N n++") | "++e1_str++")"
+    | @binop.App sz n m => "((unsigned _BitInt("++pp_N sz++"))(((unsigned _BitInt("++pp_N (n+m)++"))"++e2_str++" << "++pp_N n++") | (unsigned _BitInt("++pp_N (n+m)++"))"++e1_str++"))"
     end.
 
   Fixpoint pp_expr {t} (e : expr.expr var fn t) : string :=
