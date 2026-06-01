@@ -185,9 +185,9 @@ Module sv.
     | @binop.And n => "("++e1_str++" & "++e2_str++")"
     | @binop.Or n => "("++e1_str++" | "++e2_str++")"
     | @binop.Xor n => "("++e1_str++" ^ "++e2_str++")"
-    | @binop.Slu n m => "("++e1_str++" << "++e2_str++")"
-    | @binop.Sru n m => "("++e1_str++" >> "++e2_str++")"
-    | @binop.Srs n m => "$unsigned(($signed("++e1_str++") >>> "++e2_str++"))"
+    | @binop.Slu n => "("++e1_str++" << "++e2_str++")"
+    | @binop.Sru n => "("++e1_str++" >> "++e2_str++")"
+    | @binop.Srs n => "$unsigned(($signed("++e1_str++") >>> "++e2_str++"))"
     | @binop.Mul n m z => pp_N z ++ "'(" ++e1_str++" * "++e2_str++")"
     | @binop.EqBits n => "("++e1_str++" == "++e2_str++")"
     | @binop.Compare signed c n =>

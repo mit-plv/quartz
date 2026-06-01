@@ -147,9 +147,9 @@ Module cpp.
     | @binop.And n => "("++e1_str++" & "++e2_str++")"
     | @binop.Or n => "("++e1_str++" | "++e2_str++")"
     | @binop.Xor n => "("++e1_str++" ^ "++e2_str++")"
-    | @binop.Slu n m => "slu<"++pp_N n++", "++pp_N m++">("++e1_str++", "++e2_str++")"
-    | @binop.Sru n m => "sru<"++pp_N n++", "++pp_N m++">("++e1_str++", "++e2_str++")"
-    | @binop.Srs n m => "srs<"++pp_N n++", "++pp_N m++">("++e1_str++", "++e2_str++")"
+    | @binop.Slu n => "slu<"++pp_N n++">("++e1_str++", "++e2_str++")"
+    | @binop.Sru n => "sru<"++pp_N n++">("++e1_str++", "++e2_str++")"
+    | @binop.Srs n => "srs<"++pp_N n++">("++e1_str++", "++e2_str++")"
     | @binop.Mul n m z => "(unsigned _BitInt("++pp_N z++"))("++e1_str++" * (unsigned _BitInt("++pp_N (N.max m z)++"))"++e2_str++")"
     | @binop.EqBits n => "("++e1_str++" == "++e2_str++")"
     | @binop.Compare signed c n =>
@@ -337,18 +337,18 @@ const T& at0(const std::array<T, N>& arr, std::size_t idx) {
     return zero;
 }
 
-template <std::size_t N, std::size_t M>
-unsigned _BitInt(N) slu(unsigned _BitInt(N) a, unsigned _BitInt(M) b) {
+template <std::size_t N>
+unsigned _BitInt(N) slu(unsigned _BitInt(N) a, unsigned _BitInt(N) b) {
     return b < N ? a << b : 0;
 }
 
-template <std::size_t N, std::size_t M>
-unsigned _BitInt(N) sru(unsigned _BitInt(N) a, unsigned _BitInt(M) b) {
+template <std::size_t N>
+unsigned _BitInt(N) sru(unsigned _BitInt(N) a, unsigned _BitInt(N) b) {
     return b < N ? a >> b : 0;
 }
 
-template <std::size_t N, std::size_t M>
-unsigned _BitInt(N) srs(signed _BitInt(N) a, unsigned _BitInt(M) b) {
+template <std::size_t N>
+unsigned _BitInt(N) srs(signed _BitInt(N) a, unsigned _BitInt(N) b) {
     return b < N ? a >> b : a >> (N - 1);
 }
 
