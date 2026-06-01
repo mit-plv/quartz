@@ -33,9 +33,9 @@ Definition test_all_ops_inner {var} := @fn.Fn var type.Unit (type.reify'' AllOps
       let rec <- #rec .. r_sub = (#a - #b) in
       let rec <- #rec .. r_and = (#a & #b) in
       let rec <- #rec .. r_or  = (#a | #b) in
-      let rec <- #rec .. r_slu = (#a << (#rec .. r_ur)) in
-      let rec <- #rec .. r_sru = (#a >> (#rec .. r_ur)) in
-      let rec <- #rec .. r_srs = (#a .>> (#rec .. r_ur)) in
+      let rec <- #rec .. r_slu = (#a << #b) in
+      let rec <- #rec .. r_sru = (#a >> #b) in
+      let rec <- #rec .. r_srs = (#a .>> #b) in
       let rec <- #rec .. r_mul_full  = $(expr.Binop (@binop.Mul 32 32 64) (expr.Var a) (expr.Var b)) in
       let rec <- #rec .. r_mul_same  = $(expr.Binop (@binop.Mul 32 32 32) (expr.Var a) (expr.Var b)) in
       let m1 := $(expr.Const (t:=Bits 16) (Z_to_bv _ (-1)%Z)) in

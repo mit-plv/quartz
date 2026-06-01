@@ -228,9 +228,9 @@ Module binop.
   | And {n} : binop (Bits n) (Bits n) (Bits n)
   | Or {n} : binop (Bits n) (Bits n) (Bits n)
   | Xor {n} : binop (Bits n) (Bits n) (Bits n)
-  | Slu {n m} : binop (Bits n) (Bits m) (Bits n)
-  | Sru {n m} : binop (Bits n) (Bits m) (Bits n)
-  | Srs {n m} : binop (Bits n) (Bits m) (Bits n)
+  | Slu {n} : binop (Bits n) (Bits n) (Bits n)
+  | Sru {n} : binop (Bits n) (Bits n) (Bits n)
+  | Srs {n} : binop (Bits n) (Bits n) (Bits n)
   | Mul {n m z} : binop (Bits n) (Bits m) (Bits z) 
   | EqBits {n} : binop (Bits n) (Bits n) Bool
   | Compare (signed: bool) (c: compare) {n} : binop (Bits n) (Bits n) Bool
