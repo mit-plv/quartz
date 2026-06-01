@@ -228,9 +228,9 @@ Module binop.
   | And {n} : binop (Bits n) (Bits n) (Bits n)
   | Or {n} : binop (Bits n) (Bits n) (Bits n)
   | Xor {n} : binop (Bits n) (Bits n) (Bits n)
-  | Slu {n m} : binop (Bits n) (Bits m) (Bits n)
-  | Sru {n m} : binop (Bits n) (Bits m) (Bits n)
-  | Srs {n m} : binop (Bits n) (Bits m) (Bits n)
+  | Slu {n} : binop (Bits n) (Bits n) (Bits n)
+  | Sru {n} : binop (Bits n) (Bits n) (Bits n)
+  | Srs {n} : binop (Bits n) (Bits n) (Bits n)
   | Mul {n m z} : binop (Bits n) (Bits m) (Bits z) 
   | EqBits {n} : binop (Bits n) (Bits n) Bool
   | Compare (signed: bool) (c: compare) {n} : binop (Bits n) (Bits n) Bool
@@ -244,9 +244,9 @@ Module binop.
     | And => bv_and
     | Or => bv_or
     | Xor => bv_xor
-    | Slu => fun a b => Z_to_bv _ (Z.shiftl (bv_unsigned a) (bv_unsigned b))
-    | Sru => fun a b => Z_to_bv _ ((bv_unsigned a ≫ bv_unsigned b))
-    | Srs => fun a b => Z_to_bv _ (bv_signed a ≫ (bv_unsigned b))
+    | Slu => fun a b => bv_shiftl a b
+    | Sru => fun a b => bv_shiftr a b 
+    | Srs => fun a b => bv_ashiftr a b
     | @Mul _ _ z => fun a b => Z_to_bv z (Z.mul (bv_unsigned a) (bv_unsigned b))
     | EqBits => fun a b => bool_to_bv _ (bv_unsigned a =? bv_unsigned b)%Z
     | Compare signed c => fun a b =>
