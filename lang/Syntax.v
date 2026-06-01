@@ -227,6 +227,7 @@ Module binop.
   | Sub {n} : binop (Bits n) (Bits n) (Bits n)
   | And {n} : binop (Bits n) (Bits n) (Bits n)
   | Or {n} : binop (Bits n) (Bits n) (Bits n)
+  | Xor {n} : binop (Bits n) (Bits n) (Bits n)
   | Slu {n m} : binop (Bits n) (Bits m) (Bits n)
   | Sru {n m} : binop (Bits n) (Bits m) (Bits n)
   | Srs {n m} : binop (Bits n) (Bits m) (Bits n)
@@ -242,6 +243,7 @@ Module binop.
     | Sub => fun x y => x - y
     | And => bv_and
     | Or => bv_or
+    | Xor => bv_xor
     | Slu => fun a b => Z_to_bv _ (Z.shiftl (bv_unsigned a) (bv_unsigned b))
     | Sru => fun a b => Z_to_bv _ ((bv_unsigned a ≫ bv_unsigned b))
     | Srs => fun a b => Z_to_bv _ (bv_signed a ≫ (bv_unsigned b))
@@ -411,6 +413,7 @@ Module expr.
   Notation "e1 + e2" := (expr.Binop binop.Add e1 e2) (in custom quartz_expr at level 50, left associativity).
   Notation "e1 - e2" := (expr.Binop binop.Add e1 e2) (in custom quartz_expr at level 50, left associativity).
   Notation "e1 | e2" := (expr.Binop binop.Or e1 e2) (in custom quartz_expr at level 50, left associativity).
+  Notation "e1 ^ e2" := (expr.Binop binop.Xor e1 e2) (in custom quartz_expr at level 45, left associativity).
   Notation "e1 << e2" := (expr.Binop binop.Slu e1 e2) (in custom quartz_expr at level 60, left associativity).
   Notation "e1 >> e2" := (expr.Binop binop.Sru e1 e2) (in custom quartz_expr at level 60, left associativity).
   Notation "e1 .>> e2" := (expr.Binop binop.Srs e1 e2) (in custom quartz_expr at level 60, left associativity).

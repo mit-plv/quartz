@@ -175,6 +175,7 @@ Module sv.
     | @unop.Resize true n m => "$unsigned(" ++ pp_N m ++ "'($signed("++e1_str++")))"
     | @unop.Left l r => "Either#("++pp_type l++", "++pp_type r++")::left("++e1_str++")"
     | @unop.Right l r => "Either#("++pp_type l++", "++pp_type r++")::right("++e1_str++")"
+    | @unop.Slice _ s l => pp_N l ++ "'((" ++ e1_str ++ ") >> " ++ pp_N s ++ ")"
     end.
 
   Definition pp_binop {t1 t2 t3} (op : binop t1 t2 t3) (e1_str e2_str : string) : string :=
@@ -183,6 +184,7 @@ Module sv.
     | @binop.Sub n => "("++e1_str++" - "++e2_str++")"
     | @binop.And n => "("++e1_str++" & "++e2_str++")"
     | @binop.Or n => "("++e1_str++" | "++e2_str++")"
+    | @binop.Xor n => "("++e1_str++" ^ "++e2_str++")"
     | @binop.Slu n m => "("++e1_str++" << "++e2_str++")"
     | @binop.Sru n m => "("++e1_str++" >> "++e2_str++")"
     | @binop.Srs n m => "$unsigned(($signed("++e1_str++") >>> "++e2_str++"))"

@@ -137,6 +137,7 @@ Module cpp.
     | @unop.Resize true n m => "((unsigned _BitInt("++pp_N m++"))((signed _BitInt("++pp_N n++"))("++e1_str++")))"
     | @unop.Left l r => "std::variant<"++pp_type l++", "++pp_type r++">(std::in_place_index<0>, "++e1_str++")"
     | @unop.Right l r => "std::variant<"++pp_type l++", "++pp_type r++">(std::in_place_index<1>, "++e1_str++")"
+    | @unop.Slice _ s l => "((unsigned _BitInt("++pp_N l++"))(("++e1_str++") >> "++pp_N s++"))"
     end.
 
   Definition pp_binop {t1 t2 t3} (op : binop t1 t2 t3) (e1_str e2_str : string) : string :=
@@ -145,6 +146,7 @@ Module cpp.
     | @binop.Sub n => "("++e1_str++" - "++e2_str++")"
     | @binop.And n => "("++e1_str++" & "++e2_str++")"
     | @binop.Or n => "("++e1_str++" | "++e2_str++")"
+    | @binop.Xor n => "("++e1_str++" ^ "++e2_str++")"
     | @binop.Slu n m => "slu<"++pp_N n++", "++pp_N m++">("++e1_str++", "++e2_str++")"
     | @binop.Sru n m => "sru<"++pp_N n++", "++pp_N m++">("++e1_str++", "++e2_str++")"
     | @binop.Srs n m => "srs<"++pp_N n++", "++pp_N m++">("++e1_str++", "++e2_str++")"
