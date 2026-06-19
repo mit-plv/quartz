@@ -3,20 +3,17 @@ From stdpp Require Import bitvector.definitions (* vector *).
 
 From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
 
-From quartz.lang Require Import domain Syntax. (* Import (coercions) domain.Zmod. *)
+From quartz.lang Require Import domain Syntax. 
 From Stdlib Require Import BinInt.
 From Stdlib Require Import String List.
 From Stdlib Require NArith Vector.
-(* Import ListNotations. *)
 
 From quartz.lang Require Import ident_to_string let_lift.
 
 Module InterfaceExample.
 Import fn.
 Import type.
-(* Open Scope Z_scope. *)
 
-(* TODO: sum types? *)
 
 Import (coercions) BV.
 Module QStdlib.
@@ -24,11 +21,6 @@ Module QStdlib.
 
   Definition ExtractBits {var} {n} (s: N) {l: N} : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
     return $(expr.Unop (unop.Slice s l) (expr.Var b)))).    
-
-    (* let shift_amt : Bits n := _ 'd s in *)
-    (* let shifted_b := #b >> #shift_amt in     *)
-    (* return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))). *)
-
   (* Concatenate bitvectors, matching [bv_concat sz hi lo] semantics.
      Result width is explicitly [sz] (typically [sz = hi_w + lo_w]).
    *)
@@ -88,7 +80,6 @@ End Fifo. Notation Fifo := Fifo.Fifo (only parsing).
 Module fifo1. Section fifo1.
   Context (t : type).
 
-  (* TODO: bool state type? *)
   Record state := { valid : Bool; data : t; }.
 
   Definition State := type.reify'' state.
@@ -1515,26 +1506,6 @@ Module cpu.
       let st := fetch_stage (#st) in
       let st := tick_mul (#st) in 
       return #st)).
-
-    Notation foo := FromIMem.
-
-    (* TODO *)
-    (* Inductive MemType := *)
-    (* | Imem *)
-    (* | Dmem *)
-    (* | Mmio. *)
-    
-    (* Definition fromMem (mem: MemType) := *)
-    (*   match mem with *)
-    (*   | Imem => FromIMem *)
-    (*   | Dmem => FromDMem *)
-    (*   | Mmio => FromMMIO *)
-    (*   end.  *)
-    
-    (* Definition can_enq_resp (mem: MemType) {var} :=  *)
-    (*   let mem := fromMem mem in  *)
-    (*   Fn (fun (st : var State) => quartz_eexpr:( *)
-    (*   return ! fifo1_full (#st..foo))).                                                                               *)
 
     Definition can_enq_resp_imem {var} :=
       Fn (fun (st : var State) => quartz_eexpr:(

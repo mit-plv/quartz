@@ -2,45 +2,9 @@ From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof 
 #[export] Set Primitive Projections.
 From Stdlib Require Import Vector String List BinInt (* Bits  *)Datatypes. Import ListNotations.
 From quartz.lang Require Import domain ident_to_string let_lift.
-(* Import (coercions) domain.Zmod. *)
+Import (coercions) domain.BV.
 
 From stdpp Require Import base bitvector.definitions vector.
-
-
-(* Open Scope Z_scope. *)
-Module Import BV.
-  Coercion embed_bool (b : bool) : bv 1 := bool_to_bv _ b.
-  Coercion nonzero {m} (x : bv m) : bool := negb (bv_unsigned x =? 0)%Z.
-  Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed.
-  Inductive Cases2 : bv 1 -> Prop :=
-  | Cases2_0 : Cases2 (Z_to_bv _ 0) | Cases2_1 : Cases2 (Z_to_bv _ 1).
-  Lemma cases2 (x : bv 1) : Cases2 x.
-  Proof.
-    destruct (decide (x = Z_to_bv _ 0)) as [->|Hne].
-    - constructor.
-    - enough (x = Z_to_bv 1 1) as -> by constructor.
-      apply (proj2 (bv_eq _ _ _)).
-      assert (Hne' : bv_unsigned x ≠ 0%Z).
-      { intro He. apply Hne. apply (proj2 (bv_eq _ _ _)).
-        rewrite Z_to_bv_unsigned. exact He.
-        }
-      assert (Heq : bv_unsigned (Z_to_bv 1 1) = 1%Z) by
-        (apply Z_to_bv_small; unfold bv_modulus; simpl; lia).
-      rewrite Heq.
-      pose proof (bv_unsigned_in_range 1 x) as Hr.
-      unfold bv_modulus in Hr. simpl in Hr. lia.
-  Qed.
-  Inductive BoolCases : bv 1 -> Prop :=
-  | BoolTrue : BoolCases true | BoolFalse : BoolCases false.
-  Lemma bool_cases (b : bv 1) : BoolCases b.
-  Proof.
-    destruct (cases2 b).
-    - enough (embed_bool false = Z_to_bv _ 0) as H by (rewrite <- H; exact BoolFalse).
-      apply (proj2 (bv_eq _ _ _)).
-      vm_compute. reflexivity.
-    - exact BoolTrue.
-  Qed.
-End BV.
 
 Module type.
   Local Unset Elimination Schemes.
@@ -295,7 +259,7 @@ Module typeWithHole.
         (List.nth_default (default _) (Vector.to_list r) (Z.to_nat (bv_unsigned (fst i)))) (snd i)
     end.
   Arguments get {_ _}.
-Search vec.
+
   Fixpoint upd C : forall t, plug C t -> indices C -> (t -> t) -> plug C t :=
     match C return forall t, plug C t -> indices C -> (t -> t) -> plug C t with
     | HOLE => fun t r i f => f r

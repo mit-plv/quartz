@@ -1,1 +1,2 @@
 -R _build/default/lang quartz.lang
+-R _build/default/examples quartz.examples

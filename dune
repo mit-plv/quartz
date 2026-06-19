@@ -1,6 +1,7 @@
 (dirs :standard _objects)
 
 (alias (name default) (deps (alias_rec lang/all)))
+(alias (name default) (deps (alias_rec examples/all)))
 
 (env
   (dev
