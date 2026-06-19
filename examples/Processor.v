@@ -814,7 +814,7 @@ Module Decode. Section Decode.
                     rs2Valid := false;
                     rdValid := true;
                     itype := const Inst_Alu;
-                    immediateType := const Imm_none }
+                    immediateType := const Imm_I }
     else
     (* SRLI: shift right logical immediate (shamt in rs2 field) *)
     if (#opcode == const opcode_OP_IMM) & (#funct3 == const funct3_SRLI) & (#funct7 == const funct7_SRLI) then
@@ -823,7 +823,7 @@ Module Decode. Section Decode.
                     rs2Valid := false;
                     rdValid := true;
                     itype := const Inst_Alu;
-                    immediateType := const Imm_none }
+                    immediateType := const Imm_I }
     else
     (* LUI: load upper immediate *)
     if (#opcode == const opcode_LUI) then
@@ -882,34 +882,27 @@ Module Decode. Section Decode.
       else if (#p..alu_in_flds..D_opcode == const opcode_LUI) then
         init_struct AluOutput { alu_out_reg := #imm;
                                           alu_out_csr := _ 'd 0 }
-      else if (#p..alu_in_flds..D_opcode == const opcode_OP)
-            & (#p..alu_in_flds..D_funct3 == const funct3_XOR)
-            & (#p..alu_in_flds..D_funct7 == const funct7_XOR) then
-        let xa := #p..alu_in_rs1val in
-        let xb := #p..alu_in_rs2val in
-        init_struct AluOutput { alu_out_reg := $(expr.Binop binop.Xor (expr.Var xa) (expr.Var xb));
-                                          alu_out_csr := _ 'd 0 }
-      else if (#p..alu_in_flds..D_opcode == const opcode_OP_IMM)
-            & (#p..alu_in_flds..D_funct3 == const funct3_SLLI)
-            & (#p..alu_in_flds..D_funct7 == const funct7_SLLI) then
-        let sa := #p..alu_in_rs1val in
-        let shamt5 := #p..alu_in_flds..D_rs2Idx in
-        let shamt32 : Bits 32 := $(expr.Unop unop.UnsignedResize (expr.Var shamt5)) in
-        init_struct AluOutput { alu_out_reg := #sa << #shamt32;
-                                          alu_out_csr := _ 'd 0 }
-      else if (#p..alu_in_flds..D_opcode == const opcode_OP_IMM)
-            & (#p..alu_in_flds..D_funct3 == const funct3_SRLI)
-            & (#p..alu_in_flds..D_funct7 == const funct7_SRLI) then
-        let ra := #p..alu_in_rs1val in
-        let rshamt5 := #p..alu_in_flds..D_rs2Idx in
-        let rshamt32 : Bits 32 := $(expr.Unop unop.UnsignedResize (expr.Var rshamt5)) in
-        init_struct AluOutput { alu_out_reg := #ra >> #rshamt32;
-                                          alu_out_csr := _ 'd 0 }
-      else
+      else 
         let alu_src1 := #p..alu_in_rs1val in
         let alu_src2 := if (#p..alu_in_props..immediateType == const Imm_none) then
                           #p..alu_in_rs2val
                         else #imm in
+        if ((* #p..alu_in_flds..D_opcode == const opcode_OP) *)
+              (#p..alu_in_flds..D_funct3 == const funct3_XOR)
+            & (#p..alu_in_flds..D_funct7 == const funct7_XOR)) then
+        init_struct AluOutput { alu_out_reg := $(expr.Binop binop.Xor (expr.Var alu_src1) (expr.Var alu_src2));
+                                          alu_out_csr := _ 'd 0 }
+      else if ((* #p..alu_in_flds..D_opcode == const opcode_OP_IMM) *)
+              (#p..alu_in_flds..D_funct3 == const funct3_SLLI)
+            & (#p..alu_in_flds..D_funct7 == const funct7_SLLI)) then
+        init_struct AluOutput { alu_out_reg := #alu_src1 << #alu_src2;
+                                          alu_out_csr := _ 'd 0 }
+      else if ((* #p..alu_in_flds..D_opcode == const opcode_OP_IMM) *)
+              (#p..alu_in_flds..D_funct3 == const funct3_SRLI)
+            & (#p..alu_in_flds..D_funct7 == const funct7_SRLI)) then
+        init_struct AluOutput { alu_out_reg := #alu_src1 >> #alu_src2;
+                                          alu_out_csr := _ 'd 0 }
+      else
         init_struct AluOutput { alu_out_reg := #alu_src1 + #alu_src2;
                                           alu_out_csr := _ 'd 0}
    )).
@@ -962,8 +955,7 @@ Module Decode. Section Decode.
                                    ctrl_out_exnCode := const EXN_InstructionAddressMisaligned;
                                    ctrl_out_mtval := #nextPC }
         else (* BEQ / BNE *)
-          let isBne := ((#flds..D_opcode == const opcode_BRANCH)
-                      & (#flds..D_funct3 == const funct3_BNE)) in
+          let isBne := ((#flds..D_funct3 == const funct3_BNE)) in
           let taken := if #isBne then ~(#rs1val == #rs2val) else (#rs1val == #rs2val) in
           let nextPC := #pc + #imm in
           let isAligned := is_word_aligned (#nextPC) in 
