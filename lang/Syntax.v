@@ -1,10 +1,15 @@
-From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
 #[export] Set Primitive Projections.
 From Stdlib Require Import Vector String List BinInt (* Bits  *)Datatypes. Import ListNotations.
-From quartz.lang Require Import domain ident_to_string let_lift.
+From quartz.lang Require Import domain ident_to_string.
 Import (coercions) domain.BV.
 
 From stdpp Require Import base bitvector.definitions vector.
+
+From Ltac2 Require Import Ltac2 Array List Constr Proj Ind Constructor Char.
+Declare ML Module "quartz.monomorphize_plugin".
+Ltac2 @ external rmonomorphize_fast : constr -> constr := "quartz.monomorphize_plugin" "rmonomorphize_fast".
+Ltac2 @ external deglob_fast : constr -> constr := "quartz.monomorphize_plugin" "deglob_fast".
+Ltac2 @ external fn2fns_fast : constr -> constr -> constr := "quartz.monomorphize_plugin" "fn2fns_fast".
 
 Module type.
   Local Unset Elimination Schemes.
@@ -48,7 +53,7 @@ Module type.
   (*   | S n => Vector.cons (type.interp t) (default t) n (default_array n) *)
   (*   end. *)
   Definition default_array (n : nat) : vec t n :=
-    fun_to_vec (fun _ => default t). 
+    fun_to_vec (fun _ => default t).
   End WithDefault.
   Fixpoint default (t : type) : t :=
     match t return t with
@@ -59,7 +64,24 @@ Module type.
     | Array t n => default_array default t n
     end.
 
+  Definition tt : Unit := bv_0 _.
+
+  Fixpoint fieldType (s : struct) (n : string) : type :=
+    match s with
+    | nil => Unit
+    | cons nt s =>
+      if String.eqb (fst nt) n
+      then snd nt
+      else fieldType s n
+    end.
+
+  Declare Scope quartz_type.
+  Bind Scope quartz_type with type.
+  Delimit Scope quartz_type with quartz_type.
+  Notation "a * b" := (Pair a%quartz_type b%quartz_type) : quartz_type.
+
   Ltac2 Type exn ::= [ ReifyUnknown (constr) | InductiveNotAPrimitiveRecord (constr) ].
+
   Ltac2 rec reify t :=
     lazy_match! t with
     | type.interp ?t => t
@@ -75,13 +97,13 @@ Module type.
     | vec ?t ?n =>
         let rt := reify t in
         constr:(type.Array $rt $n)
-    | _ => match UConstr.kind t with UConstr.Ind ind inst =>
+    | _ => match Constr.Unsafe.kind t with Constr.Unsafe.Ind ind inst =>
       let pp := match Ind.get_projections (Ind.data ind) with Some pp => pp | _ => Control.throw (InductiveNotAPrimitiveRecord t) end in
       let r := Array.fold_right (fun pp acc =>
           let c := Option.get (Proj.to_constant pp) in
           let n := constr_string_of_string (Ident.to_string (List.last (Env.path (Std.ConstRef c)))) in
-          let e := UConstr.make (UConstr.Constant c inst) in
-          let t := match UConstr.kind (Constr.type e) with UConstr.Prod _ t => t | _ => 'Empty_set end in
+          let e := Constr.Unsafe.make (Constr.Unsafe.Constant c inst) in
+          let t := match Constr.Unsafe.kind (Constr.type e) with Constr.Unsafe.Prod _ t => t | _ => 'Empty_set end in
           let rt := reify t in
           constr:(cons ($n, $rt) $acc)
         ) pp constr:(@nil (String.string * type)) in
@@ -91,16 +113,7 @@ Module type.
   end end.
 
   Notation reify'' state := (ltac2:(let r := type.reify (pretype state) in exact $r)) (only parsing).
-  Definition tt : Unit := bv_0 _.
 
-  Fixpoint fieldType (s : struct) (n : string) : type :=
-    match s with
-    | nil => Unit
-    | cons nt s =>
-      if String.eqb (fst nt) n
-      then snd nt
-      else fieldType s n
-    end.
 End type.
 Notation type := type.type (only parsing).
 Import type.
@@ -139,13 +152,14 @@ Module struct.
   Proof. cbv [get fst snd String.eqb Ascii.eqb Bool.eqb Struct_ interp fold_right]. trivial. Qed.
 
   Ltac2 Type exn ::= [ RepUnknown (constr) ].
+
   Ltac2 rep v :=
-    match UConstr.kind (Constr.type v) with
-    | UConstr.Ind ind inst =>
+    match Constr.Unsafe.kind (Constr.type v) with
+    | Constr.Unsafe.Ind ind inst =>
       let arrproj := Option.get (Ind.get_projections (Ind.data ind)) in
       Array.fold_right (fun p acc =>
         let c := Option.get (Proj.to_constant p) in
-        let e := UConstr.make (UConstr.Constant c inst) in
+        let e := Constr.Unsafe.make (Constr.Unsafe.Constant c inst) in
         let e := constr:($e $v) in
         constr:(pair $e $acc)
         ) arrproj 'Datatypes.tt
@@ -167,7 +181,7 @@ Module unop.
   Definition interp {a b} (op: unop a b) : type.interp a -> type.interp b :=
     match op in unop a b return a -> b with
     | IsZero => fun v => bool_to_bv _ (bv_unsigned v =? 0 )%Z
-    | Not => bv_not 
+    | Not => bv_not
     | Opp => fun v => - v
     | Resize signed =>
         if signed
@@ -195,7 +209,7 @@ Module binop.
   | Slu {n} : binop (Bits n) (Bits n) (Bits n)
   | Sru {n} : binop (Bits n) (Bits n) (Bits n)
   | Srs {n} : binop (Bits n) (Bits n) (Bits n)
-  | Mul {n m z} : binop (Bits n) (Bits m) (Bits z) 
+  | Mul {n m z} : binop (Bits n) (Bits m) (Bits z)
   | EqBits {n} : binop (Bits n) (Bits n) Bool
   | Compare (signed: bool) (c: compare) {n} : binop (Bits n) (Bits n) Bool
   | MkPair {a b: type} : binop a b (Pair a b)
@@ -208,9 +222,9 @@ Module binop.
     | And => bv_and
     | Or => bv_or
     | Xor => bv_xor
-    | Slu => fun a b => bv_shiftl a b
-    | Sru => fun a b => bv_shiftr a b 
-    | Srs => fun a b => bv_ashiftr a b
+    | Slu => bv_shiftl
+    | Sru => bv_shiftr
+    | Srs => bv_ashiftr
     | @Mul _ _ z => fun a b => Z_to_bv z (Z.mul (bv_unsigned a) (bv_unsigned b))
     | EqBits => fun a b => bool_to_bv _ (bv_unsigned a =? bv_unsigned b)%Z
     | Compare signed c => fun a b =>
@@ -268,18 +282,19 @@ Module typeWithHole.
     | @Struct _ _ n t _ pf => fun _ r i f =>
         struct.upd n r (eq_rect (plug t _) (fun u => u -> u) (fun v => upd t _ v i f) _ (eq_sym (pf _)))
     | Array sz t _ => fun _ r i f =>
-        Vector.upd r (Z.to_nat (bv_unsigned (fst i))) 
+        Vector.upd r (Z.to_nat (bv_unsigned (fst i)))
                      (fun r => upd _ _ r (snd i) f)
     end.
   Arguments upd {_ _}.
 
   Ltac2 Type exn ::= [ ReifyFieldUnknown (constr) ].
+
   Ltac2 reify_field p0c :=
-    match UConstr.kind p0c with
-    | UConstr.Constant c0 inst =>
+    match Constr.Unsafe.kind p0c with
+    | Constr.Unsafe.Constant c0 inst =>
       match Proj.of_constant c0 with
       | Some p0 =>
-        lazy_match! type.reify (UConstr.make (UConstr.Ind (Proj.ind p0) inst)) with
+        lazy_match! type.reify (Constr.Unsafe.make (Constr.Unsafe.Ind (Proj.ind p0) inst)) with
         | type.Struct ?sn ?rs =>
     let rec firstn n l := if Int.le n 0
       then lazy_match! l with nil => l | @cons ?t _ _ => constr:(@nil $t) end
@@ -297,7 +312,7 @@ Module typeWithHole.
     | _ => Control.throw (ReifyFieldUnknown p0c)
     end.
 End typeWithHole.
-Notation typeWithHole :=typeWithHole.typeWithHole (only parsing).
+Notation typeWithHole := typeWithHole.typeWithHole (only parsing).
 
 Coercion typeWithHole.plug : typeWithHole >-> Funclass.
 Coercion typeWithHole.indices : typeWithHole >-> type.
@@ -307,14 +322,14 @@ Module expr.
     Context {var : type -> Type}.
     Context {fn : type -> type -> Type}.
 
-    Inductive expr {t : type} : Type :=
-    | Const (c : type.interp t)
-    | Var (x : var t)
-    | Get (C : typeWithHole) (r : @expr (C t)) (i : @expr C)
-    | Unop {t1 : type} (op : unop t1 t) (e1 : @expr t1)
-    | Binop {t1 t2 : type} (op : binop t1 t2 t) (e1 : @expr t1) (e2 : @expr t2)
-    | If (_ : @expr Bool) (a b : @expr t)
-    | Call {a} (_ : fn a t) (_ : @expr a).
+    Inductive expr : type -> Type :=
+    | Const {t} (c : type.interp t) : expr t
+    | Var {t} (x : var t) : expr t
+    | Get {t} (C : typeWithHole) (r : expr (C t)) (i : expr C) : expr t
+    | Unop {t t1} (op : unop t1 t) (e1 : expr t1) : expr t
+    | Binop {t t1 t2} (op : binop t1 t2 t) (e1 : expr t1) (e2 : expr t2) : expr t
+    | If {t} (_ : expr Bool) (a b : expr t) : expr t
+    | Call {t a} (_ : fn a t) (_ : expr a) : expr t.
 
     Definition tt := @Const Unit (bv_0 _).
     Definition true := @Const Bool true.
@@ -323,16 +338,17 @@ Module expr.
   End WithSubstitutionType.
   Arguments expr : clear implicits.
 
-  Fixpoint interp {t} (e : expr type.interp type.interpfn t) : type.interp t :=
-    match e return type.interp t with
+  Fixpoint interp (t : type) (e : expr type.interp type.interpfn t) {struct e} : type.interp t :=
+    match e in expr _ _ t0 return type.interp t0 with
     | Const c => c
     | Var x => x
-    | Get _ r i => typeWithHole.get (interp r) (interp i)
-    | Unop op e1 => unop.interp op (interp e1)
-    | Binop op e1 e2 => binop.interp op (interp e1) (interp e2)
-    | If e a b => if interp e : bool then interp a else interp b
-    | Call f e => f (interp e)
+    | Get _ r i => typeWithHole.get (interp _ r) (interp _ i)
+    | Unop op e1 => unop.interp op (interp _ e1)
+    | Binop op e1 e2 => binop.interp op (interp _ e1) (interp _ e2)
+    | If e a b => if interp _ e : bool then interp _ a else interp _ b
+    | Call f e1 => f (interp _ e1)
     end.
+  Arguments interp {t} e.
 
   Declare Custom Entry quartz_expr.
   Notation "quartz_expr:( e )" := e (e custom quartz_expr, only parsing).
@@ -346,8 +362,7 @@ Module expr.
   Notation "'const' c" := (expr.Const c) (in custom quartz_expr at level 0, c constr at level 0).
   Notation "f '(' e ')'" := (expr.Call f e)
     (in custom quartz_expr at level 0, left associativity, f global, e custom quartz_expr at level 200).
-  Notation "r '..' f" := (expr.Get (ltac2:(let (c, _) := typeWithHole.reify_field (pretype f) in exact $c)) r expr.tt)
-    (in custom quartz_expr at level 1, left associativity, f global, r custom quartz_expr, only parsing).
+
   Notation "r '[' i ']'" :=
     (expr.Get (typeWithHole.Array _ typeWithHole.HOLE _) r (expr.Binop binop.MkPair i expr.tt))
     (in custom quartz_expr at level 1, left associativity, i custom quartz_expr at level 200).
@@ -397,6 +412,8 @@ Module expr.
   Notation "'if' cond 'then' a 'else' b" := (expr.If cond a b)
     (in custom quartz_expr at level 200, cond custom quartz_expr at level 200, a custom quartz_expr at level 200, b custom quartz_expr at level 200).
 
+  Notation "r '..' f" := (expr.Get (ltac2:(let (c, _) := Syntax.typeWithHole.reify_field (pretype f) in exact $c)) r expr.tt)
+    (in custom quartz_expr at level 1, left associativity, f global, r custom quartz_expr, only parsing).
 End expr.
 Notation expr := expr.expr.
 
@@ -420,13 +437,13 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
 
   Definition LetBlock {X} {Y} (a: X) b  : Y:=
     let x := a in b a.
-  
+
   Fixpoint interp {t} (e: eexpr type.interp type.interpfn t) : t :=
     match e in eexpr _ _ t return t with
     | Ret e => expr.interp e
     | Let _ a b => (* let x := expr.interp a in interp (b x) *)
                   LetBlock (expr.interp a) (fun x => interp (b x))
-    | Bind _ a b => LetBlock (interp a) (fun x => interp ( b x)) 
+    | Bind _ a b => LetBlock (interp a) (fun x => interp ( b x))
     | If e a b => if expr.interp e : bool then interp a else interp b
     | Case e l r => match expr.interp e with inl v => interp (l v) | inr v => interp (r v) end
     | Upd i s v => typeWithHole.upd (expr.interp s) (expr.interp i) (fun _ => expr.interp v)
@@ -452,13 +469,15 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
     (in custom quartz_eexpr at level 200, cond custom quartz_expr at level 200, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200).
   Notation "'match' cond 'with' | 'left' l '=>' a | 'right' r '=>' b 'end'" := (eexpr.Case cond (fun l => a) (fun r => b))
     (in custom quartz_eexpr at level 200, cond custom quartz_expr at level 200, l name, a custom quartz_eexpr at level 200, r name, b custom quartz_eexpr at level 200).
-  Notation "s '..' f '=' v" := (eexpr.Upd (C:=ltac2:(let (c, _) := typeWithHole.reify_field (pretype f) in exact $c)) expr.tt s v)
-    (in custom quartz_eexpr at level 200, f global, s custom quartz_expr at level 0, v custom quartz_expr at level 200, only parsing).
+
   Notation "s '[' i ']' '=' v" :=
     (eexpr.Upd (C:=typeWithHole.Array _ typeWithHole.HOLE _) (expr.Binop binop.MkPair i expr.tt) s v)
     (in custom quartz_eexpr at level 200, s custom quartz_expr at level 0, i custom quartz_expr at level 200, v custom quartz_expr at level 200).
   Notation "s .[ C , i ] '=' v" := (eexpr.Upd (C:=C) i s v)
     (in custom quartz_eexpr at level 200, s custom quartz_expr at level 0, C constr at level 0, i custom quartz_expr at level 200, v custom quartz_expr at level 200).
+
+  Notation "s '..' f '=' v" := (eexpr.Upd (C:=ltac2:(let (c, _) := Syntax.typeWithHole.reify_field (pretype f) in exact $c)) expr.tt s v)
+    (in custom quartz_eexpr at level 200, s custom quartz_expr at level 0, f global, v custom quartz_expr at level 200, only parsing).
 End eexpr.
 Notation eexpr := eexpr.eexpr (only parsing).
 
@@ -484,64 +503,24 @@ Module fn.
     | expr.If e a b => expr.If (@expr_map_fn _ e) (@expr_map_fn _ a) (@expr_map_fn _ b)
     | Call fn a => Call (f _ _ fn) (@expr_map_fn _ a)
     end.
+
   Fixpoint eexpr_map_fn {t} (e : eexpr var fn1 t) { struct e} : eexpr var fn2 t :=
     match e with
-    | eexpr.Ret e => eexpr.Ret (expr_map_fn e)
-    | eexpr.Let x e C => eexpr.Let x (expr_map_fn e) (fun v => @eexpr_map_fn _ (C v))
-    | eexpr.Bind x e C => eexpr.Bind x (@eexpr_map_fn _ e) (fun v => @eexpr_map_fn _ (C v))
-    | If e a b => If (expr_map_fn e) (@eexpr_map_fn _ a) (@eexpr_map_fn _ b)
-    | Case e a b => Case (expr_map_fn e) (fun l => @eexpr_map_fn _ (a l)) (fun r => @eexpr_map_fn _ (b r))
-    | Upd i s v => Upd (@expr_map_fn _ i) (@expr_map_fn _ s) (@expr_map_fn _ v)
+    | eexpr.Ret e1 => eexpr.Ret (expr_map_fn e1)
+    | eexpr.Let x e1 C => eexpr.Let x (expr_map_fn e1) (fun v => @eexpr_map_fn _ (C v))
+    | eexpr.Bind x e1 C => eexpr.Bind x (@eexpr_map_fn _ e1) (fun v => @eexpr_map_fn _ (C v))
+    | If e1 a b => If (expr_map_fn e1) (@eexpr_map_fn _ a) (@eexpr_map_fn _ b)
+    | Case e1 a b => Case (expr_map_fn e1) (fun l => @eexpr_map_fn _ (a l)) (fun r => @eexpr_map_fn _ (b r))
+    | Upd i s v => Upd (expr_map_fn i) (expr_map_fn s) (expr_map_fn v)
     end.
   End WithF.
 
   Fixpoint interp {a b} (f : fn type.interp a b) {struct f} : type.interp a -> type.interp b :=
      fun v => eexpr.interp (eexpr_map_fn (@interp) (f.(body) v)).
 
-  Ltac2 let_lift_fns e := let_lift_constants (fun c i =>
-    lazy_match! Constr.type (UConstr.make (UConstr.Constant c i)) with
-    | context[@fn.fn] => true
-    | _ => false
-    end) e.
 
-  Module Private_example_global_fn.
-    Definition succ {var} : fn var (Bits 8) (Bits 8) := Fn (fun x => quartz_eexpr:(
-      return ( #x + 8 'd 1 ))).
-    Definition pred {var} : fn var (Bits 8) (Bits 8) := Fn (fun y => quartz_eexpr:(
-      let _u := succ ($(expr.Unop unop.UnsignedResize (expr.Var y)) ) in
-      return ( #y + 8 'd (-1) ))).
-    Definition cycle {var} := Fn (var:=var) (fun z => quartz_eexpr:(
-      let r := pred ( succ ( #z ) ) in return #r)).
-    Lemma interp_cycle : interp cycle = fun z => (z + Z_to_bv _ 1 + Z_to_bv _ (-1))%bv.
-    Proof.
-      cbn [cycle            interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
-      (* = (fun v : Bits 8 => interp pred (interp succ v)) *)
-      cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp].
-      (* = RHS *)
-      trivial.
-    Qed.
-    Lemma ok_cycle z : interp cycle z = z.
-    Proof. rewrite interp_cycle, <-bv_add_assoc.
-           rewrite bv_add_0_r ; auto.
-    Qed.
-  End Private_example_global_fn.
-
-  Module Private_example_global_polyfn. (* polymorphic functions can't be packaged yet *)
-    Definition succ {var} : fn var (Bits 8) (Bits 8) := Fn (fun x => quartz_eexpr:(
-      return ( #x + 8 'd 1 ))).
-    Definition pred {var} {n} : fn var (Bits n) (Bits n) := Fn (fun y => quartz_eexpr:(
-      let _u := succ ($(expr.Unop unop.UnsignedResize (expr.Var y)) ) in
-      return ( #y + _ 'd (-1) ))).
-    Definition cycle {var} := Fn (var:=var) (fun z => quartz_eexpr:(
-      let r := pred ( succ ( #z ) ) in return #r)).
-    Lemma interp_cycle : interp cycle = fun z => (z + Z_to_bv _ 1 + Z_to_bv _ (-1))%bv.
-    Proof. cbn [cycle pred succ  interp body eexpr.interp eexpr_map_fn expr.interp expr_map_fn binop.interp]. trivial. Qed.
-    Lemma ok_cycle z : interp cycle z = z.
-    Proof. rewrite interp_cycle, <-bv_add_assoc. 
-           rewrite bv_add_0_r ; auto.
-    Qed.
-  End Private_example_global_polyfn.
 End fn.
+Local Notation fn := fn.fn (only parsing).
 
 Module fns. (* deeply embedded environments of functions *)
   Import expr eexpr.
@@ -560,90 +539,32 @@ Module fns. (* deeply embedded environments of functions *)
     | Ret _ _ f => fun a => eexpr.interp (f a)
     end.
 
-  Import Ltac2.Printf.
-
-  Local Ltac2 rec rdelta (x : constr) : constr :=
-    let oref := match Unsafe.kind x with
-                | Unsafe.Constant cst _ => Some (Std.ConstRef cst)
-                | Unsafe.Var id => Some (Std.VarRef id)
-                | _ => None
-                end in
-    match oref with | None => x | Some ref =>
-    let x' := eval cbv delta [$ref] in $x in
-    if Constr.equal x x' then x
-    else rdelta x' end.
-
-  Ltac2 package_global_fns var fn e :=
-    let topfname := match Constr.decompose_app_list e with
-      | (head, _) => match UConstr.kind head with
-        | UConstr.Constant c _ => constr_string_of_string (Ident.to_string (List.last (Env.path (Std.ConstRef c))))
-        | _ => printf "Failed to determine name of non-constant head: %t, using ""cycle""" head; constr:("cycle"%string)
-        end
-      end in
-    let tga := lazy_match! Constr.type e with forall var, fn.fn var ?a _ => a end in
-    let tgb := lazy_match! Constr.type e with forall var, fn.fn var _ ?b => b end in
-    let e := rdelta e in
-    let e := eval cbv beta iota in ($e $var) in
-    let oldfn := constr:(fn.fn $var) in
-    let fnLet := constr:(@Let $var $fn $tga $tgb) in
-    let fnRet := constr:(@Ret $var $fn $tga $tgb) in
-    let rec app_lets (e : constr) (a : constr) : constr :=
-      match UConstr.kind e with
-      | UConstr.LetIn bf e c =>
-        match UConstr.kind e with
-        | UConstr.Lambda bv e =>
-          let e := UConstr.substnl [a] 0 e in
-          let lm := UConstr.make (UConstr.Lambda bv (UConstr.make (UConstr.Rel 2))) in
-          let c := UConstr.substnl [lm] 0 (UConstr.liftn 1 2 c) in
-          UConstr.make (UConstr.LetIn bf e (app_lets c a))
-        | _ =>
-          UConstr.make (UConstr.LetIn bf e (app_lets c a))
-        end
-      | _ => (* printf "UNRECOGNIZED %t" e; *) e
-    end in
-    let e := fn.let_lift_fns e in
-    let e := app_lets e var in
-    let rec replace_fn (e : constr) :=
-      if Constr.equal e oldfn
-      then fn else
-      UConstr.map replace_fn e in
-    let binder_name (b : binder) := match Binder.name b with
-      | Some id => constr_string_of_ident id | None => constr:("x"%string) end in
-    let lambda_name (body_constr : constr) := match UConstr.kind body_constr with
-      | UConstr.Lambda lb _ => binder_name lb | _ => constr:("x"%string) end in
-    let rec shallow_reify (e : constr) :=
-      match UConstr.kind e with
-      | UConstr.LetIn b body c =>
-        match Constr.decompose_app_list body with
-        | (f, [var'; ta; t; body]) =>
-          if Bool.neg (Constr.equal f constr:(@fn.Fn)) then e else
-          if Bool.neg (Constr.equal var' var) then e else
-          let bt := UConstr.make (UConstr.App fn [|ta;t|]) in
-          let b := Constr.Binder.unsafe_make (Binder.name b) (Binder.relevance b) bt in
-          let c := UConstr.make (UConstr.Lambda b (shallow_reify c)) in
-          UConstr.make (UConstr.App fnLet [|ta; t; binder_name b; lambda_name body; replace_fn body; c|])
-        | _ => e
-        end
-      | _ =>
-        match Constr.decompose_app_list e with
-        | (f, [var'; _; _; body]) =>
-           if Bool.neg (Constr.equal f constr:(@fn.Fn)) then e else
-           if Bool.neg (Constr.equal var' var) then e else
-           UConstr.make (UConstr.App fnRet [|topfname; lambda_name body; replace_fn body|])
-        | _ => printf "UNRECOGNIZED %t" e; e
-        end
-    end in
-    shallow_reify e.
-
-  Notation package_global_fns'' var fn fns := (ltac2:(let e := fns.package_global_fns (pretype var) (pretype fn) (pretype fns) in exact $e)) (only parsing).
-
-  Module Private_example_wholeprogramdef.
-    Local Open Scope string_scope.
-    Definition packaged_cycle {var fn} : fns _ _ _ _ :=
-      package_global_fns'' var fn (@fn.Private_example_global_fn.cycle).
-    Lemma packaged_ok : interp packaged_cycle = fn.interp fn.Private_example_global_fn.cycle.
-    Proof. cbn beta iota delta [interp packaged_cycle]. trivial. Qed.
-  End Private_example_wholeprogramdef.
+  Notation package_global_fns'' var fn f :=
+    (ltac2:(
+       let var := pretype var in
+       let fn := pretype fn in
+       let hyps := Control.hyps () in
+       Message.print (Message.of_string "--- Ltac2 Env Hyps ---");
+       List.iter (fun (id, _, _) => Message.print (Message.of_ident id)) hyps;
+       let f := pretype f in
+       let rec get_head c := match Unsafe.kind c with
+         | Unsafe.App h _ => get_head h
+         | _ => c
+         end in
+       let head_c := get_head f in
+       let top_name := match Unsafe.kind head_c with
+         | Unsafe.Constant c _ =>
+             let rec last l := match l with [] => "main" | x :: [] => Ident.to_string x | _ :: xs => last xs end in
+             last (Env.path (Std.ConstRef c))
+         | _ => "main"
+         end in
+       let f_app := constr:($f $var) in
+       let f_mono := Control.time (Some "rmonomorphize_fast") (fun () => rmonomorphize_fast f_app) in
+       let top_name_str := constr_string_of_string top_name in
+       let bundle := Constr.Unsafe.make (Constr.Unsafe.App var [| fn; '(@fns.Let); '(@fns.Ret); 'Datatypes.true; 'Datatypes.false; 'Ascii.Ascii; 'String.String; 'String.EmptyString; top_name_str; '(@expr.Var); '(@expr.Call); '(@eexpr.Ret) |]) in
+       let res := Control.time (Some "phase3_fn2fns_fast") (fun () => fn2fns_fast bundle f_mono) in
+       exact ($res : fns $var $fn _ _)
+    )) (only parsing).
 End fns.
 Local Notation fns := fns.fns (only parsing).
 
@@ -711,7 +632,7 @@ Module fifo1. Section fifo1.
     fn.interp empty st <> fn.interp full st.
   Proof.
     cbn.
-    case (BV.bool_cases (valid st)); vm_compute bool_decide; 
+    destruct (BV.bool_cases (valid st)); vm_compute;
       cbv[bool_to_bv]; discriminate.
     (* cbn -[Zmod.eqb]. (* reduces [#st..valid] in [length] even though [t] is abstract. *) *)
     (* (* embed_bool (Zmod.eqb 0 (valid st)) <> valid st *) case (Zmod.bool_cases (valid st)); cbv; congruence. *)

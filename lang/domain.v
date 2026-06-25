@@ -52,6 +52,7 @@ Module Import BV.
   Qed.
 End BV.
 
+
 Module bits.
   Definition hex {n : N} (v : bv n) : string :=
     NilZero.string_of_int (N.to_int n) ++ "'h" ++

@@ -3,7 +3,7 @@ From Stdlib Require Import BinInt Bits Vector String Ascii List DecimalString He
 Import ListNotations.
 
 From stdpp Require Import bitvector.definitions.
-From quartz.lang Require Import Syntax let_lift.
+From quartz.lang Require Import Syntax.
 
 Module pp.
   Local Open Scope bool_scope. Local Open Scope string_scope.
@@ -100,6 +100,46 @@ Module pp.
         else h :: insert_type t tail
     end.
 
-  Definition topsort := fold_right insert_type [].
+  Fixpoint mangle_type (t : type) : string :=
+    match t with
+    | type.Unit => "U"
+    | type.Bits sz =>
+        let sz_str := N sz in
+        sz_str ++ "B"
+    | type.Pair a b =>
+        mangle_type a ++ "_" ++ mangle_type b ++ "_P"
+    | type.Either a b =>
+        mangle_type a ++ "_" ++ mangle_type b ++ "_E"
+    | type.Struct name fields =>
+        let fields_str :=
+          let fix mangle_fields (fields : list (string * type)) : string :=
+            match fields with
+            | nil => ""
+            | (fname, ftype) :: rest =>
+                mangle_type ftype ++ (match mangle_fields rest with "" => "" | r => "_" ++ r end)
+            end
+          in mangle_fields fields
+        in
+        let name_len := nat (String.length name) in
+        let n_fields := nat (List.length fields) in
+        (if match fields_str with "" => true | _ => false end then "" else fields_str ++ "_") ++
+        name ++ name_len ++ "_" ++ n_fields ++ "S"
+    | type.Array t' sz =>
+        let sz_str := nat sz in
+        mangle_type t' ++ "_" ++ sz_str ++ "A"
+    end.
 
+  Fixpoint mangle_fields (fields : list (string * type)) : string :=
+    match fields with
+    | nil => ""
+    | (fname, ftype) :: rest =>
+        mangle_type ftype ++ (match mangle_fields rest with "" => "" | r => "_" ++ r end)
+    end.
+
+  Definition mangle_struct_name (name : string) (fields : list (string * type)) : string :=
+    let fields_str := mangle_fields fields in
+    let n_fields := nat (List.length fields) in
+    name ++ "__" ++ (if match fields_str with "" => true | _ => false end then "" else fields_str ++ "_") ++ n_fields ++ "S".
+
+  Definition topsort := fold_right insert_type [].
 End pp.

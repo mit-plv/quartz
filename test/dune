@@ -1,6 +1,6 @@
 (coq.theory
  (name quartz.test)
- (theories quartz.lang)
+ (theories quartz.lang quartz.examples)
 )
 
 (subdir run (dynamic_include ../gen/dune.inc))

@@ -1,0 +1,5 @@
+(library
+ (name quartz_monomorphize_plugin)
+ (public_name quartz.monomorphize_plugin)
+ (flags :standard -rectypes)
+ (libraries rocq-runtime.kernel rocq-runtime.library rocq-runtime.plugins.ltac2))

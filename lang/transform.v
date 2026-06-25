@@ -22,7 +22,7 @@ Section Forall_forall.
 End Forall_forall.
 End List.
 
-From quartz.lang Require Import domain Syntax ident_to_string let_lift.
+From quartz.lang Require Import domain Syntax ident_to_string.
 From stdpp Require Import bitvector.definitions.
 
 Open Scope N_scope.
@@ -105,25 +105,25 @@ Module Import type.
       return fold_right (fun nt T => type.interp (snd nt) * T)%type unit fs ->
              bits (fold_right (fun nt acc => acc + size (snd nt)) 0 fs)
       with | nil => fun _ => bv_0 _
-      | p :: l => fun v => bv_concat _ (pack_struct l (snd v)) (@pack _ (fst v))
+      | p :: l => fun v => bv_concat _ (@pack _ (fst v)) (pack_struct l (snd v))
       end.
     Context {t : type}.
     Fixpoint pack_array n (v : Vector.t (type.interp t) n) : bits (Nat.iter n (N.add (size t)) 0) :=
       match v in Vector.t _ n
       return bits (Nat.iter n (N.add (size t)) 0)
-      with | Vector.nil => bv_0 _ 
-      | Vector.cons hd tl => bv_concat _ (@pack _ hd) (pack_array _ tl)
+      with | Vector.nil => bv_0 _
+      | Vector.cons hd tl => bv_concat _ (pack_array _ tl) (@pack _ hd)
       end.
   End WithPack.
   Fixpoint pack {t : type} : forall (v : t), bits (size t) :=
     match t as t0 return t0 -> bits (size t0) with
     | Bits _ => fun v => v
-    | Pair a b => fun p => bv_concat _ (pack (snd p)) (pack (fst p))
+    | Pair a b => fun p => bv_concat _ (pack (fst p)) (pack (snd p))
     | Either a b => fun e =>
         let s := N.max (size a) (size b) in
         match e with
-        | inl v => bv_concat _ (Z_to_bv s (bv_unsigned (pack v))) (bv_0 1)
-        | inr v => bv_concat _ (Z_to_bv s (bv_unsigned (pack v))) (Z_to_bv 1 1)
+        | inl v => bv_concat _ (bv_0 1) (Z_to_bv s (bv_unsigned (pack v)))
+        | inr v => bv_concat _ (Z_to_bv 1 1) (Z_to_bv s (bv_unsigned (pack v)))
         end
     | Struct name fields => pack_struct (@pack) fields
     | Array t' n => pack_array (@pack) n
@@ -180,14 +180,14 @@ Module expr.
   End rmap.
 
   Definition unapp0l {var fn t} (e : expr var fn t) : expr var fn t :=
-    match e with
+    match e in expr _ _ t0 return expr var fn t0 with
     | Binop op e1 e2 =>
         match op in binop.binop _ _ t return _ -> _ -> expr var fn t with
         | (@binop.App sz n m) as op => fun e1 e2 =>
         if (n =? 0) && (0 <=? m) then Unop unop.UnsignedResize e2 else Binop op e1 e2
         | op' => fun e1 e2 => Binop op' e1 e2
         end%bool e1 e2
-    | _ => e
+    | x => x
     end.
   Lemma interp_unapp0l {t} e : interp (@unapp0l _ _ t e) = interp e.
   Proof.
@@ -195,27 +195,27 @@ Module expr.
     destruct n as [|p]; [|trivial].
     cbn [N.eqb N.leb andb].
     simpl.
-    intros. 
+    intros.
     destruct m as [|p]; [|trivial]; simpl in *.
     - apply (inj bv_unsigned).
       rewrite bv_concat_unsigned', Z_to_bv_unsigned.
       repeat rewrite bv_unsigned_N_0.  trivial.
     - apply (inj bv_unsigned).
       rewrite bv_concat_unsigned', Z_to_bv_unsigned.
-      repeat rewrite bv_unsigned_N_0. 
-      simpl. 
+      repeat rewrite bv_unsigned_N_0.
+      simpl.
       rewrite Z.shiftl_0_l, Z.lor_0_l; trivial.
   Qed.
 
   Definition unapp0r {var fn t} (e : expr var fn t) : expr var fn t :=
-    match e with
+    match e in expr _ _ t0 return expr var fn t0 with
     | Binop op e1 e2 =>
         match op in binop.binop _ _ t return _ -> _ -> expr var fn t with
         | (@binop.App sz n m) as op => fun e1 e2 =>
         if (m =? 0) && (0 <=? n) then Unop unop.UnsignedResize e1 else Binop op e1 e2
         | op' => fun e1 e2 => Binop op' e1 e2
         end%bool e1 e2
-    | _ => e
+    | x => x
     end.
   Lemma interp_unapp0r {t} e : interp (@unapp0r _ _ t e) = interp e.
   Proof.
@@ -228,12 +228,12 @@ Module expr.
       repeat rewrite bv_unsigned_N_0.  trivial.
     - apply (inj bv_unsigned).
       rewrite bv_concat_unsigned', Z_to_bv_unsigned.
-      repeat rewrite bv_unsigned_N_0. 
+      repeat rewrite bv_unsigned_N_0.
       rewrite Z.shiftl_0_r, Z.lor_0_r; trivial.
   Qed.
 
   Definition unresizesame {var fn t} (e : expr var fn t) : expr var fn t :=
-    match e with
+    match e in expr _ _ t0 return expr var fn t0 with
       | Unop op e1 =>
         match op in unop.unop t1 t' return expr var fn t1 -> expr var fn t' with
         | @unop.Resize s n m => fun e1 =>
@@ -243,7 +243,7 @@ Module expr.
             end
         | op' => fun e1 => Unop op' e1
         end e1
-      | _ => e
+      | x => x
     end.
   Lemma interp_unresizesame {t} e : interp (@unresizesame _ _ t e) = interp e.
   Proof.
@@ -301,7 +301,7 @@ Module eexpr.
       | (n, t) :: fs' => fun pf e =>
         Bind "f_packed" (@pack t (proj1 (proj1 pf)) (Get (@typeWithHole.Struct name l n typeWithHole.HOLE fs' (proj2 (proj1 pf))) e expr.tt)) (fun p =>
         Bind "fs_packed" (pack_struct fs' (l ++ [(n, t)]) (proj2 pf) (eq_rect _ (fun f => expr (Struct name f)) e _ (eq_sym (app_assoc l [(n, t)] fs')))) (fun pr =>
-        Ret (Var pr ++ Var p)))
+        Ret (Var p ++ Var pr)))
       end.
   End PackStruct.
   Section PackArray.
@@ -315,7 +315,7 @@ Module eexpr.
         let index_width := N.log2_up (N.of_nat n) in
         Bind "elem_packed" (@pack (Get (typeWithHole.Array n typeWithHole.HOLE index_width) e (@Const _ _ (Pair (Bits index_width) Unit) (Z_to_bv index_width i, (bv_0 _))))) (fun pe =>
         Bind "rest_packed" (pack_array r') (fun pr =>
-        Ret (Var pe ++ Var pr)))
+        Ret (Var pr ++ Var pe)))
       end.
   End PackArray.
   Fixpoint pack {t} {struct t} : forall (pf : type.wf t) (e : expr t), eexpr (Bits (size t)) :=
@@ -324,12 +324,12 @@ Module eexpr.
     | Pair a b => fun pf e =>
       Bind "fst_packed" (pack (proj1 pf) (Get (typeWithHole.PairL typeWithHole.HOLE b) e expr.tt)) (fun pa =>
       Bind "snd_packed" (pack (proj2 pf) (Get (typeWithHole.PairR a typeWithHole.HOLE) e expr.tt)) (fun pb =>
-      Ret (Var pb ++ Var pa)))
+      Ret (Var pa ++ Var pb)))
     | Either l r => fun pf e => Case e
       (fun lv => Bind "l_packed" (pack (proj1 pf) (Var lv)) (fun pl =>
-        Ret ((Var pl) ++ @expr.Const _ _ (Bits 1) (Z_to_bv 1 0))))
+        Ret (@expr.Const _ _ (Bits 1) (Z_to_bv 1 0) ++ (cast (Var pl) : expr (Bits (N.max (size l) (size r)))))))
       (fun rv => Bind "r_packed" (pack (proj2 pf) (Var rv)) (fun pr =>
-        Ret ((Var pr) ++ @expr.Const _ _ (Bits 1) (Z_to_bv 1 1))))
+        Ret (@expr.Const _ _ (Bits 1) (Z_to_bv 1 1) ++ (cast (Var pr) : expr (Bits (N.max (size l) (size r)))))))
     | Struct name fields => fun pf e => pack_struct (@pack) name fields [] pf e
     | Array t n => fun pf e => pack_array (@pack t pf) n e n
     end.
@@ -404,7 +404,7 @@ Module eexpr.
     revert l e pf; induction Hpack as [| [n t] r Hpack ? IH]; [trivial |].
     cbn [pack_struct type.pack_struct eexpr.interp expr.interp unop.interp binop.interp
       struct.drop unop.UnsignedResize LetBlock fold_right fst snd struct_wf]; intros.
-    destruct pf as [[Hwf_t Hfield] Hwf_r]. 
+    destruct pf as [[Hwf_t Hfield] Hwf_r].
     rewrite bv_concat_unsigned by lia.
     rewrite IH with (pf:=Hwf_r) by auto. rewrite Hpack.
     rewrite bv_concat_unsigned by lia.
@@ -436,7 +436,7 @@ Module eexpr.
     clearbody v. destruct (ltac:(lia) : S i + r' = i + S r')%nat.
     cbn [pack_array type.pack_array eexpr.interp expr.interp unop.interp unop.UnsignedResize binop.interp]. cbv[LetBlock].
     rewrite Hpack. cbn [pack_array type.pack_array eexpr.interp expr.interp unop.interp unop.UnsignedResize binop.interp].
-    rewrite bv_concat_unsigned at 1 by (cbn [Nat.iter]; reflexivity).
+    rewrite bv_concat_unsigned at 1 by (unfold Nat.iter; cbn; apply N.add_comm).
     rewrite IH. cbn [typeWithHole.get fst].
     assert (S i + r' - S r' = i)%nat as -> by lia.
     rewrite Z_to_bv_unsigned, bv_wrap_small.
@@ -448,13 +448,16 @@ Module eexpr.
     rewrite Nat2Z.id.
     revert to_list_v; pattern v; refine (@Vector.caseS' t r' _ _ _); intros.
     cbn [type.pack_array].
-    rewrite bv_concat_unsigned by (cbn [Nat.iter]; reflexivity).
+    rewrite bv_concat_unsigned.
+    2: { unfold Nat.iter; cbn; apply N.add_comm. }
     f_equal. f_equal.
-    - f_equal. f_equal. setoid_rewrite (f_equal (List.hd (default t)) to_list_v).
-      rewrite hd_skipn; trivial.
-    - f_equal. f_equal. f_equal. apply Vector.to_list_inj.
+    - apply f_equal. apply (f_equal (type.pack_array (@type.pack) r')). apply Vector.to_list_inj.
       rewrite Vector.to_list_unappr, skipn_S_l.
       setoid_rewrite (f_equal (@List.tl _) to_list_v); trivial.
+    - rewrite <- hd_skipn.
+      change (typeWithHole.plug _ t) with (Array t (S i + r')).
+      change (fix interp (t:type) := _) with @type.interp in *.
+      rewrite <- to_list_v. cbn. trivial.
   Qed.
 
   Lemma interp_pack [t] [w : type.wf t] e : interp (pack w e) = type.pack (expr.interp e).
@@ -463,21 +466,9 @@ Module eexpr.
       intros; apply bv_unsigned_inj.
     { destruct (expr.interp e); trivial. }
     { rewrite IHt1, IHt2 by (inversion w; auto); trivial. }
-    { destruct (expr.interp e); cbv[LetBlock]; rewrite ?IHt1, ?IHt2 by (inversion w; auto).
-      - simpl. 
-        repeat rewrite !bv_concat_unsigned', Z_to_bv_unsigned. 
-        rewrite @bv_0_unsigned.
-        replace (bv_wrap 1 0 : Z) with 0%Z by reflexivity.
-        rewrite !Z.lor_0_r. f_equal. symmetry.
-        rewrite Z_to_bv_unsigned.
-        pose proof (bv_unsigned_in_range _ (type.pack i)).
-        rewrite bv_wrap_small; auto.
-        split; [ lia | ].
-        apply Z.lt_le_trans with (bv_modulus (size t1)); [lia | apply bv_modulus_le_mono, N.le_max_l].
-      - simpl. rewrite !bv_concat_unsigned', Z_to_bv_unsigned. f_equal. f_equal. f_equal. symmetry.
-        apply bv_wrap_small.
-        pose proof (bv_unsigned_in_range _ (type.pack i)).
-        split; [lia | apply Z.lt_le_trans with (bv_modulus (size t2)); [lia | apply bv_modulus_le_mono, N.le_max_r]].
+    { destruct (expr.interp e); cbv[LetBlock]; cbv beta.
+      - rewrite IHt1. cbn. trivial.
+      - rewrite IHt2. cbn. trivial.
     }
     { setoid_rewrite interp_pack_struct; trivial. }
     { setoid_rewrite (interp_pack_array _ _ _ _ 0); trivial. }

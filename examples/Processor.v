@@ -8,7 +8,7 @@ From Stdlib Require Import BinInt.
 From Stdlib Require Import String List.
 From Stdlib Require NArith Vector.
 
-From quartz.lang Require Import ident_to_string let_lift.
+From quartz.lang Require Import ident_to_string.
 
 Module InterfaceExample.
 Import fn.
@@ -86,17 +86,17 @@ Module fifo1. Section fifo1.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let full {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition full {var} := Fn (fun (st : var State) => quartz_eexpr:(
     return #st..valid)).
 
-  Let empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
     return ! #st..valid )).
 
-  Let first {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition first {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let out_d := #st..data in
     return (#out_d))).
 
-  Let enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
+  Definition enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
     let st := #p .1 in let d  := #p .2 in
     let is_full := full ( #st ) (* #st..valid  *)in 
     if #is_full then
@@ -106,7 +106,7 @@ Module fifo1. Section fifo1.
       let st <- #st..data = #d in
       return #st)).
 
-  Let deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let st_new <- #st..valid = false in
     return (#st_new))).
 
@@ -279,11 +279,11 @@ Module rfScored.
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
   (* TODO: let '(_,_) syntax *)
-  Let isLocked {var} : fn _ _ Bool := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+  Definition isLocked {var} : fn _ _ Bool := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 in 
     return #st[#idx] .1)).
 
-  Let read {var} : fn _ _ t_data := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+  Definition read {var} : fn _ _ t_data := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 in 
     if !#idx then
       return const (default t_data)
@@ -291,19 +291,19 @@ Module rfScored.
     return #st[#idx] .2)).
 
   (* TODO: #st[#idx].1 = true syntax *)
-  Let acquireLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+  Definition acquireLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 in 
     let data := #st[#idx] .2 in                        
     let st <- #st[#idx] = (true, #data) in
     return #st)).
 
-  Let releaseLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+  Definition releaseLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 in 
     let data := #st[#idx] .2 in                        
     let st <- #st[#idx] = (false, #data) in
     return #st)).
 
-  Let writeAndRelease {var} := Fn (fun (p : var (Pair State (type.Pair t_idx t_data))) => quartz_eexpr:(
+  Definition writeAndRelease {var} := Fn (fun (p : var (Pair State (type.Pair t_idx t_data))) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 .1 in let data := #p .2 .2 in
     if #st[#idx].1 then (* locked *)
       let st <- #st[#idx] = (false, #data) in
@@ -351,31 +351,31 @@ Module bht. Section bht.
   Definition State := type.reify'' state.
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+  Definition defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     return #pc + (_ 'd 4))).
 
-  Let getIndex {var} : fn _ _ (Bits idxSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+  Definition getIndex {var} : fn _ _ (Bits idxSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     let shift_amt : Bits addrSz := _ 'd 2 in 
     let shifted_pc := #pc >> #shift_amt in
     return $(expr.Unop unop.UnsignedResize (expr.Var shifted_pc)))).
 
-  Let computeTarget {var} : fn _ _ (Bits addrSz) := Fn (fun (args: var (Pair (Pair (Bits addrSz) (Bits addrSz)) Bool)) => quartz_eexpr:( 
+  Definition computeTarget {var} : fn _ _ (Bits addrSz) := Fn (fun (args: var (Pair (Pair (Bits addrSz) (Bits addrSz)) Bool)) => quartz_eexpr:( 
     let pc := #args .1 .1 in let targetPc := #args .1 .2 in let taken := #args .2 in
     return if #taken then #targetPc else defaultNextPc (#pc))).
 
-  Let extractDir {var} : fn _ _ Bool := Fn (fun (dp: var (Bits histLen)) => quartz_eexpr:(
+  Definition extractDir {var} : fn _ _ Bool := Fn (fun (dp: var (Bits histLen)) => quartz_eexpr:(
     return (#dp == _ 'd 3) | (#dp == _ 'd 2)
   )).
 
-  Let newDP {var} : fn _ _ (Bits histLen) := Fn (fun (p: var (Pair (Bits histLen) Bool)) => quartz_eexpr:(
+  Definition newDP {var} : fn _ _ (Bits histLen) := Fn (fun (p: var (Pair (Bits histLen) Bool)) => quartz_eexpr:(
     let dpBits := #p .1 in let taken := #p .2 in
     if #taken then
       return (if #dpBits == _ 'd 3 then #dpBits else #dpBits + _ 'd 1)
     else 
       return (if ! #dpBits then #dpBits else #dpBits - _ 'd 1)
- )).
+  )).
 
-  Let ppcDp {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
+  Definition ppcDp {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
     let st := #p .1 in let pc := #p .2 .1 in let targetPc := #p .2 .2 in
     let index := getIndex ( #pc ) in
     let entry := #st[#index] in
@@ -383,7 +383,7 @@ Module bht. Section bht.
     return computeTarget ( ((#pc, #targetPc), #direction) )
   )).
 
-  Let update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) Bool))) => quartz_eexpr:(
+  Definition update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) Bool))) => quartz_eexpr:(
      let st := #p .1 in let pc := #p .2 .1 in let taken := #p .2 .2 in
      let index := getIndex ( #pc ) in
      let entry := #st[#index] in
@@ -425,15 +425,15 @@ Module btb. Section btb.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let getIndex {var} : fn _ _ (Bits idxSz) := 
+  Definition getIndex {var} : fn _ _ (Bits idxSz) := 
       @QStdlib.ExtractBits var addrSz 2 idxSz.  
-  Let getTag {var} : fn _ _ (Bits tagSz) := 
+  Definition getTag {var} : fn _ _ (Bits tagSz) := 
       @QStdlib.ExtractBits var addrSz ((addrSz - tagSz)) tagSz. 
 
-  Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+  Definition defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     return #pc + (_ 'd 4))).
   Import QStdlib.
-  Let predPc {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Bits addrSz))) => quartz_eexpr:( 
+  Definition predPc {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Bits addrSz))) => quartz_eexpr:( 
     let st := #p .1 in let pc := #p .2 in 
     let index := getIndex (#pc) in
     let tag := getTag (#pc) in
@@ -446,7 +446,7 @@ Module btb. Section btb.
       return defaultNextPc (#pc)
   )).
 
-  Let update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
+  Definition update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
     let st := #p .1 in let pc := #p .2 .1 in let nextPc := #p .2 .2 in
     let index := getIndex (#pc) in
     let tag := getTag (#pc) in
@@ -501,7 +501,7 @@ Module csrFile. Section csrFile.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let readCsr {var} : fn _ _ mword := Fn (fun (p : var (Pair State CsrIdx)) => quartz_eexpr:(
+  Definition readCsr {var} : fn _ _ mword := Fn (fun (p : var (Pair State CsrIdx)) => quartz_eexpr:(
     let st := #p .1 in let csr := #p .2 in
     if #csr == const CSR_mtvec then return #st..csr_mtvec
     else if #csr == const CSR_mepc then return #st..csr_mepc
@@ -511,7 +511,7 @@ Module csrFile. Section csrFile.
     else return _ 'd 0
   )).
 
-  Let writeCsr {var} : fn _ _ State := Fn (fun (p : var (Pair State (Pair CsrIdx mword))) => quartz_eexpr:(
+  Definition writeCsr {var} : fn _ _ State := Fn (fun (p : var (Pair State (Pair CsrIdx mword))) => quartz_eexpr:(
     let st := #p .1 in let csr := #p .2 .1 in let val := #p .2 .2 in
     if #csr == const CSR_mtvec then
       let st <- #st..csr_mtvec = #val in return #st
@@ -1141,29 +1141,29 @@ Module cpu.
     Import QStdlib.
 
 
-    Notation fifo1_full := (Fifo.full _ _ (fifo1.impl _)).
-    Notation fifo1_empty := (Fifo.empty _ _ (fifo1.impl _)).
-    Notation fifo1_enq := (Fifo.enq _ _ (fifo1.impl _)).
-    Notation fifo1_first := (Fifo.first _ _ (fifo1.impl _)).
-    Notation fifo1_deq := (Fifo.deq _ _ (fifo1.impl _)).
-    Notation btb_update := (Btb.update _ (btb.impl)).  
-    Notation btb_predPc := (Btb.predPc _ (btb.impl)).  
-    Notation rf_isLocked := (RfScored.isLocked (rfScored.impl _ )).
-    Notation rf_read := (RfScored.read (rfScored.impl _)).
-    Notation rf_acquire := (RfScored.acquireLock (rfScored.impl _)).
-    Notation rf_release := (RfScored.releaseLock (rfScored.impl _)).
-    Notation rf_writeAndRelease := (RfScored.writeAndRelease (rfScored.impl _)).
+    Notation fifo1_full := (fifo1.full _).
+    Notation fifo1_empty := (fifo1.empty _).
+    Notation fifo1_enq := (fifo1.enq _).
+    Notation fifo1_first := (fifo1.first _).
+    Notation fifo1_deq := (fifo1.deq _).
+    Notation btb_update := btb.update.
+    Notation btb_predPc := btb.predPc.
+    Notation rf_isLocked := (rfScored.isLocked _).
+    Notation rf_read := (rfScored.read _).
+    Notation rf_acquire := (rfScored.acquireLock _).
+    Notation rf_release := (rfScored.releaseLock _).
+    Notation rf_writeAndRelease := (rfScored.writeAndRelease _).
 
-    Notation csr_read := (CsrFile.readCsr (csrFile.impl)).
-    Notation csr_write := (CsrFile.writeCsr (csrFile.impl)).
-    Notation bht_update := (Bht.update _ (bht.impl)).  
-    Notation bht_ppcDp := (Bht.ppcDp _ (bht.impl)).
-    Notation mul_full := (Multiplier.full _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_enq := (Multiplier.enq _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_tick := (Multiplier.tick _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_deq := (Multiplier.deq _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_peek := (Multiplier.peek _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_ready := (Multiplier.respReady _ (multiplier.impl mul_LogNSteps)).
+    Notation csr_read := csrFile.readCsr.
+    Notation csr_write := csrFile.writeCsr.
+    Notation bht_update := bht.update.
+    Notation bht_ppcDp := bht.ppcDp.
+    Notation mul_full := (multiplier.full mul_LogNSteps).
+    Notation mul_enq := (multiplier.enq mul_LogNSteps).
+    Notation mul_tick := (multiplier.tick mul_LogNSteps).
+    Notation mul_deq := (multiplier.deq mul_LogNSteps).
+    Notation mul_peek := (multiplier.peek mul_LogNSteps).
+    Notation mul_ready := (multiplier.respReady mul_LogNSteps).
 
     Let struct_test {var} := Fn (fun (st : var State) => quartz_eexpr:(
         let pc := #st..Pc in 

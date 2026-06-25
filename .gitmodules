@@ -1,0 +1,6 @@
+[submodule "yosys-slang"]
+	path = yosys-slang
+	url = https://github.com/povik/yosys-slang.git
+[submodule "test/riscv-tests"]
+	path = test/riscv/riscv-tests
+	url = https://github.com/riscv-software-src/riscv-tests.git
