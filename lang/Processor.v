@@ -8,9 +8,45 @@ From Stdlib Require Import String List.
 From Stdlib Require NArith Vector.
 Import ListNotations.
 
-From quartz.lang Require Import ident_to_string let_lift.
+From quartz.lang Require Import ident_to_string.
 
-Module InterfaceExample.
+Import (notations) type expr eexpr.
+Local Open Scope string_scope.
+
+Declare Custom Entry quartz_struct_init.
+
+Notation "f ':=' v" :=
+ (fun r =>
+   quartz_eexpr:(
+     let s <- $r..f = $v in
+     return #s
+   ))
+ (in custom quartz_struct_init at level 0,
+  f global,
+  v custom quartz_expr at level 200).
+
+Notation "a ';' b" :=
+ (fun s =>
+   eexpr.Bind "StructInit" (a s) (fun s' => b (expr.Var s')))
+ (in custom quartz_struct_init at level 91,
+  right associativity,
+  a custom quartz_struct_init,
+  b custom quartz_struct_init).
+
+Notation "'init_struct' t '{' fields '}'" :=
+ (fields (expr.Const (type.default t)))
+ (in custom quartz_eexpr at level 200,
+  t constr at level 0,
+  fields custom quartz_struct_init at level 92).
+
+Notation "'init_struct' t '{' '}'" :=
+ (quartz_eexpr:(return $(expr.Const (type.default t))))
+ (in custom quartz_eexpr at level 200,
+  t constr at level 0).
+
+Notation "'{' f '}' '(' e ')'" := (expr.Call f e)
+  (in custom quartz_expr at level 0, left associativity, f constr , e custom quartz_expr at level 200).
+
 Import fn.
 Import type.
 Open Scope Z_scope.
@@ -18,11 +54,11 @@ Open Scope Z_scope.
 (* TODO: sum types? *)
 
 Module QStdlib.
-  Import (notations) eexpr expr. Local Open Scope string_scope.
+  Local Open Scope string_scope.
 
   Definition ExtractBits {var} {n} (s: Z) {l: Z} : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
     let shift_amt : Bits n := _ 'd s in
-    let shifted_b := #b >> #shift_amt in    
+    let shifted_b := #b >> #shift_amt in
     return $(expr.Unop unop.UnsignedResize (expr.Var shifted_b)))).
 
   (* Concatenate bitvectors, matching [bv_concat sz hi lo] semantics.
@@ -39,48 +75,19 @@ Module QStdlib.
       return ((#hi' << #sh) | #lo')
     )).
 
-  Declare Custom Entry quartz_struct_init.
 
-  Notation "f ':=' v" :=
-   (fun r =>
-     quartz_eexpr:(
-       let s <- $r..f = $v in
-       return #s
-     ))
-   (in custom quartz_struct_init at level 0,
-    f global,
-    v custom quartz_expr at level 200).
-  Notation "a ';' b" :=
-   (fun s =>
-     eexpr.Bind "StructInit" (a s) (fun s' => b (expr.Var s')))
-   (in custom quartz_struct_init at level 91,
-    right associativity,
-    a custom quartz_struct_init,
-    b custom quartz_struct_init).
-  Notation "'init_struct' t '{' fields '}'" :=
-   (fields (expr.Const (type.default t)))
-   (in custom quartz_eexpr at level 200,
-    t constr at level 0,
-    fields custom quartz_struct_init at level 92).
-  Notation "'init_struct' t '{' '}'" :=
-   (quartz_eexpr:(return $(expr.Const (type.default t))))
-   (in custom quartz_eexpr at level 200,
-    t constr at level 0).
-
-  Notation "'{' f '}' '(' e ')'" := (expr.Call f e)
-    (in custom quartz_expr at level 0, left associativity, f constr , e custom quartz_expr at level 200).
 
   Module StructTest.
   End StructTest.
-End QStdlib.
+  End QStdlib.
 
 Module Fifo.
 Record Fifo {var} (t_state t_data : type) := {
   first    : fn var t_state t_data;
   empty    : fn var t_state type.Bool;
   full     : fn var t_state type.Bool;
-  enq      : fn var (type.Pair t_state t_data) t_state;  
-  deq      : fn var t_state t_state;  
+  enq      : fn var (type.Pair t_state t_data) t_state;
+  deq      : fn var t_state t_state;
 }.
 End Fifo. Notation Fifo := Fifo.Fifo (only parsing).
 
@@ -92,21 +99,21 @@ Module fifo1. Section fifo1.
 
   Definition State := type.reify'' state.
 
-  Import (notations) eexpr expr. Local Open Scope string_scope.
+  Local Open Scope string_scope.
 
-  Let full {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition full {var} := Fn (fun (st : var State) => quartz_eexpr:(
     return #st..valid)).
 
-  Let empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
     return ! #st..valid )).
 
-  Let first {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition first {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let out_d := #st..data in
     return (#out_d))).
 
-  Let enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
+  Definition enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
     let st := #p .1 in let d  := #p .2 in
-    let is_full := full ( #st ) (* #st..valid  *)in 
+    let is_full := full ( #st ) (* #st..valid  *)in
     if #is_full then
       return #st
     else
@@ -114,7 +121,7 @@ Module fifo1. Section fifo1.
       let st <- #st..data = #d in
       return #st)).
 
-  Let deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let st_new <- #st..valid = false in
     return (#st_new))).
 
@@ -150,7 +157,7 @@ Module fifo1. Section fifo1.
     fn.interp empty st <> fn.interp full st.
   Proof.
     cbn -[Zmod.eqb]. (* reduces [#st..valid] in [length] even though [t] is abstract. *)
-    case (Zmod.bool_cases (valid st)); cbv; congruence.
+    destruct (Zmod.bool_cases (valid st)); cbv; congruence.
   Qed.
 End fifo1. End fifo1.
 
@@ -162,11 +169,11 @@ Module Multiplier.
     peek : fn var t_state (type.Bits (width + width));
     full : fn var t_state type.Bool;
     respReady : fn var t_state type.Bool;
-    enq : fn var (type.Pair t_state req) t_state; 
-    deq : fn var t_state t_state; 
+    enq : fn var (type.Pair t_state req) t_state;
+    deq : fn var t_state t_state;
     tick : fn var t_state t_state;
   }.
-  
+
 End Multiplier. Notation Multiplier:= Multiplier.Multiplier (only parsing).
 
 Module multiplier. Section multiplier.
@@ -177,18 +184,18 @@ Module multiplier. Section multiplier.
   Record req_t := { input_a : Bits width; input_b : Bits width}.
   Definition Req := type.reify'' req_t.
 
-  Record state := { 
-    valid : Bool; 
+  Record state := {
+    valid : Bool;
     op1 : Bits width;
     op2 : Bits width;
     result : Bits (width + width);
     nstep : Bits logNSteps;
     finished : Bool
-  }. 
+  }.
 
   Definition State := type.reify'' state.
 
-  Import (notations) eexpr expr. Local Open Scope string_scope.
+  Local Open Scope string_scope.
 
   Definition peek {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let out := #st..result in
@@ -203,10 +210,10 @@ Module multiplier. Section multiplier.
   (* TODO: reification of types in other types. *)
   Definition enq {var} := Fn (fun (p : var (type.Pair State Req)) => quartz_eexpr:(
     let st := #p .1 in let d  := #p .2 in
-    let is_full := full ( #st ) in                        
+    let is_full := full ( #st ) in
     if #is_full then
-      return #st 
-    else 
+      return #st
+    else
       let st <- #st..valid = true in
       let st <- #st..op1 = #d..input_a in
       let st <- #st..op2 = #d..input_b in
@@ -217,26 +224,26 @@ Module multiplier. Section multiplier.
   Definition deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
     if #st..finished then
       let st <- #st..valid = false in
-      let st <- #st..finished = false in 
-      return #st 
+      let st <- #st..finished = false in
+      return #st
     else return #st)).
 
   Definition tick {var} := Fn (fun (st: var State) => quartz_eexpr:(
      if #st..valid & ! #st..finished then
        if !#st..op1 | !#st..op2 then (* zero-skip *)
-         let st <- #st..finished = true in 
-         let st <- #st..result = _ 'd 0 in 
+         let st <- #st..finished = true in
+         let st <- #st..result = _ 'd 0 in
          return #st
        else if #st..nstep ==  ~ (_ 'd 0) then (* == ones: done *)
-         let op1 := #st..op1 in               
-         let op2 := #st..op2 in               
-         let st <- #st..finished = true in 
-         let st <- #st..result = $(expr.Binop binop.Mul (expr.Var op1) (expr.Var op2))  in 
+         let op1 := #st..op1 in
+         let op2 := #st..op2 in
+         let st <- #st..finished = true in
+         let st <- #st..result = $(expr.Binop binop.Mul (expr.Var op1) (expr.Var op2))  in
          return #st
-       else 
+       else
          let st <- #st..nstep = (#st..nstep + _ 'd 1) in
          return #st
-    else return #st)).
+     else return #st)).
 
   Definition impl {var} : @Multiplier var width Req State := {|
     Multiplier.peek := peek;
@@ -260,7 +267,7 @@ Context {var: type -> Type}.
 Context {log_nregs: Z}.
 
 Notation t_idx := (Bits log_nregs).
-  
+
 Record RfScored {t_state t_data : type} := {
   acquireLock : fn var (Pair t_state t_idx) t_state;
   releaseLock : fn var (Pair t_state t_idx) t_state;
@@ -269,7 +276,7 @@ Record RfScored {t_state t_data : type} := {
   isLocked : fn var (Pair t_state t_idx) Bool
 }.
 End RfScored. End RfScored. Notation RfScored := RfScored.RfScored (only parsing).
-Module rfScored. 
+Module rfScored.
   (* TODO: non-record type *)
   Notation state' t_data nregs := (Vector.t (Bool * t_data) nregs).
   Section rfScored.
@@ -282,31 +289,31 @@ Module rfScored.
   Notation state := (state' t_data nregs).
   Definition State := type.reify'' state.
 
-  Import (notations) eexpr expr. Local Open Scope string_scope.
+  Local Open Scope string_scope.
 
   (* TODO: let '(_,_) syntax *)
-  Let isLocked {var} : fn _ _ Bool := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
-    let st := #p .1 in let idx := #p .2 in 
+  Definition isLocked {var} : fn _ _ Bool := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+    let st := #p .1 in let idx := #p .2 in
     return #st[#idx] .1)).
 
-  Let read {var} : fn _ _ t_data := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
-    let st := #p .1 in let idx := #p .2 in 
+  Definition read {var} : fn _ _ t_data := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+    let st := #p .1 in let idx := #p .2 in
     return #st[#idx] .2)).
 
   (* TODO: #st[#idx].1 = true syntax *)
-  Let acquireLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
-    let st := #p .1 in let idx := #p .2 in 
-    let data := #st[#idx] .2 in                        
+  Definition acquireLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+    let st := #p .1 in let idx := #p .2 in
+    let data := #st[#idx] .2 in
     let st <- #st[#idx] = (true, #data) in
     return #st)).
 
-  Let releaseLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
-    let st := #p .1 in let idx := #p .2 in 
-    let data := #st[#idx] .2 in                        
+  Definition releaseLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+    let st := #p .1 in let idx := #p .2 in
+    let data := #st[#idx] .2 in
     let st <- #st[#idx] = (false, #data) in
     return #st)).
 
-  Let writeAndRelease {var} := Fn (fun (p : var (Pair State (type.Pair t_idx t_data))) => quartz_eexpr:(
+  Definition writeAndRelease {var} := Fn (fun (p : var (Pair State (type.Pair t_idx t_data))) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 .1 in let data := #p .2 .2 in
     if #st[#idx].1 then (* locked *)
       let st <- #st[#idx] = (false, #data) in
@@ -326,17 +333,17 @@ Module rfScored.
     ltac2:(let t := &v in exact $t).
 
   (* TODO: vector access *)
-  Lemma foo (s : state) idx data : 
+  Lemma foo (s : state) idx data :
     fn.interp writeAndRelease (s, (idx, data)) = s.
-  Proof. 
+  Proof.
     simpl.
   Abort.
 
 End rfScored. End rfScored.
 
-Module Bht. 
+Module Bht.
   Record Bht {var} {addr_sz} (t_state: type) := {
-    update : fn var (Pair t_state (Pair (Bits addr_sz) Bool)) t_state; (* update (pc, taken) *)      
+    update : fn var (Pair t_state (Pair (Bits addr_sz) Bool)) t_state; (* update (pc, taken) *)
     ppcDp : fn var (Pair t_state (Pair (Bits addr_sz) (Bits addr_sz))) (Bits addr_sz); (* ppcDp (pc, targetPc) *)
   }.
 End Bht. Notation Bht := Bht.Bht (only parsing).
@@ -344,7 +351,7 @@ End Bht. Notation Bht := Bht.Bht (only parsing).
 Module bht. Section bht.
   Notation histLen := 2%Z.
   Context {idxSz : Z}.
-  Notation lenHist := (2%Z).              
+  Notation lenHist := (2%Z).
   Context {var: type -> Type}.
   Context {addrSz: Z}.
 
@@ -352,33 +359,33 @@ Module bht. Section bht.
 
   Notation state := (Vector.t (Bits histLen) nEntries).
   Definition State := type.reify'' state.
-  Import (notations) eexpr expr. Local Open Scope string_scope.
+  Local Open Scope string_scope.
 
-  Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+  Definition defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     return #pc + (_ 'd 4))).
 
-  Let getIndex {var} : fn _ _ (Bits idxSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
-    let shift_amt : Bits addrSz := _ 'd 2 in 
+  Definition getIndex {var} : fn _ _ (Bits idxSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+    let shift_amt : Bits addrSz := _ 'd 2 in
     let shifted_pc := #pc >> #shift_amt in
     return $(expr.Unop unop.UnsignedResize (expr.Var shifted_pc)))).
 
-  Let computeTarget {var} : fn _ _ (Bits addrSz) := Fn (fun (args: var (Pair (Pair (Bits addrSz) (Bits addrSz)) Bool)) => quartz_eexpr:( 
+  Definition computeTarget {var} : fn _ _ (Bits addrSz) := Fn (fun (args: var (Pair (Pair (Bits addrSz) (Bits addrSz)) Bool)) => quartz_eexpr:(
     let pc := #args .1 .1 in let targetPc := #args .1 .2 in let taken := #args .2 in
     return if #taken then #targetPc else defaultNextPc (#pc))).
 
-  Let extractDir {var} : fn _ _ Bool := Fn (fun (dp: var (Bits histLen)) => quartz_eexpr:(
+  Definition extractDir {var} : fn _ _ Bool := Fn (fun (dp: var (Bits histLen)) => quartz_eexpr:(
     return (#dp == _ 'd 3) | (#dp == _ 'd 2)
   )).
 
-  Let newDP {var} : fn _ _ (Bits histLen) := Fn (fun (p: var (Pair (Bits histLen) Bool)) => quartz_eexpr:(
+  Definition newDP {var} : fn _ _ (Bits histLen) := Fn (fun (p: var (Pair (Bits histLen) Bool)) => quartz_eexpr:(
     let dpBits := #p .1 in let taken := #p .2 in
     if #taken then
       return (if #dpBits == _ 'd 3 then #dpBits else #dpBits + _ 'd 1)
-    else 
+    else
       return (if ! #dpBits then #dpBits else #dpBits - _ 'd 1)
  )).
 
-  Let ppcDp {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
+  Definition ppcDp {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
     let st := #p .1 in let pc := #p .2 .1 in let targetPc := #p .2 .2 in
     let index := getIndex ( #pc ) in
     let entry := #st[#index] in
@@ -386,7 +393,7 @@ Module bht. Section bht.
     return computeTarget ( ((#pc, #targetPc), #direction) )
   )).
 
-  Let update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) Bool))) => quartz_eexpr:(
+  Definition update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) Bool))) => quartz_eexpr:(
      let st := #p .1 in let pc := #p .2 .1 in let taken := #p .2 .2 in
      let index := getIndex ( #pc ) in
      let entry := #st[#index] in
@@ -403,41 +410,41 @@ Module bht. Section bht.
     Bht.ppcDp := ppcDp
   |}.
 
- 
+
 End bht. End bht.
 
-Module Btb. 
+Module Btb.
   Record Btb {var} {addrSz} (t_state: type) := {
-    update : fn var (Pair t_state (Pair (Bits addrSz) (Bits addrSz))) t_state; (* update (pc, nextPc *)  
+    update : fn var (Pair t_state (Pair (Bits addrSz) (Bits addrSz))) t_state; (* update (pc, nextPc *)
     predPc : fn var (Pair t_state (Bits addrSz)) (Bits addrSz)
   }.
 End Btb. Notation Btb := Btb.Btb (only parsing).
 
 Module btb. Section btb.
-  Context {addrSz: Z}.              
-  Context {tagSz: Z}.              
+  Context {addrSz: Z}.
+  Context {tagSz: Z}.
   Context {idxSz: Z}.
 
   Definition nEntries : nat := Z.to_nat (2^idxSz).
-             
+
   Record state := { targets: Vector.t (Bits addrSz) nEntries;
                     tags : Vector.t (Bits tagSz) nEntries;
-                    valid : Vector.t Bool nEntries }. 
+                    valid : Vector.t Bool nEntries }.
 
   Definition State := type.reify'' state.
 
-  Import (notations) eexpr expr. Local Open Scope string_scope.
+  Local Open Scope string_scope.
 
-  Let getIndex {var} : fn _ _ (Bits idxSz) := 
-      @QStdlib.ExtractBits var addrSz 2 idxSz.  
-  Let getTag {var} : fn _ _ (Bits tagSz) := 
-      @QStdlib.ExtractBits var addrSz (addrSz - tagSz) tagSz. 
+  Definition getIndex {var} : fn _ _ (Bits idxSz) :=
+      @QStdlib.ExtractBits var addrSz 2 idxSz.
+  Definition getTag {var} : fn _ _ (Bits tagSz) :=
+      @QStdlib.ExtractBits var addrSz (addrSz - tagSz) tagSz.
 
-  Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+  Definition defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     return #pc + (_ 'd 4))).
   Import QStdlib.
-  Let predPc {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Bits addrSz))) => quartz_eexpr:( 
-    let st := #p .1 in let pc := #p .2 in 
+  Definition predPc {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Bits addrSz))) => quartz_eexpr:(
+    let st := #p .1 in let pc := #p .2 in
     let index := getIndex (#pc) in
     let tag := getTag (#pc) in
     let lookup_tag := #st..tags[#index] in
@@ -449,30 +456,30 @@ Module btb. Section btb.
       return defaultNextPc (#pc)
   )).
 
-  Let update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
+  Definition update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
     let st := #p .1 in let pc := #p .2 .1 in let nextPc := #p .2 .2 in
     let index := getIndex (#pc) in
     let tag := getTag (#pc) in
     let lookup_tag := #st..tags[#index] in
     if ~ (#nextPc == defaultNextPc (#pc)) then
       (* TODO: updating a submodule array *)
-      let valid' <- (#st..valid)[#index] = true in            
-      let targets' <- (#st..targets)[#index] = #nextPc in            
-      let tags' <- (#st..tags)[#index] = #tag in            
+      let valid' <- (#st..valid)[#index] = true in
+      let targets' <- (#st..targets)[#index] = #nextPc in
+      let tags' <- (#st..tags)[#index] = #tag in
       let st <- #st..valid = #valid' in
       let st <- #st..targets = #targets' in
       let st <- #st..tags = #tags' in
       return #st
     else
-      return #st                                            
-  )). 
+      return #st
+  )).
 
   Coercion rep (v : state) : type.reify'' state :=
     ltac2:(let t := struct.rep &v in exact $t).
 
   Definition impl {var} : @Btb var addrSz State := {|
     Btb.update := update;
-    Btb.predPc := predPc 
+    Btb.predPc := predPc
   |}.
 
 End btb. End btb.
@@ -492,19 +499,19 @@ Module csrFile. Section csrFile.
   Definition CSR_mepc : CsrIdx := Zmod.of_Z _ 833.
   Definition CSR_mcause : CsrIdx := Zmod.of_Z _ 834.
   Definition CSR_mtval : CsrIdx := Zmod.of_Z _ 835.
-  Definition CSR_mie : CsrIdx := Zmod.of_Z _ 0x304. 
+  Definition CSR_mie : CsrIdx := Zmod.of_Z _ 0x304.
 
   Record state := { csr_mtvec : mword;
                     csr_mepc : mword;
                     csr_mcause : mword;
                     csr_mtval : mword;
-                    csr_mie : mword 
+                    csr_mie : mword
                   }.
   Definition State := type.reify'' state.
 
-  Import (notations) eexpr expr. Local Open Scope string_scope.
+  Local Open Scope string_scope.
 
-  Let readCsr {var} : fn _ _ mword := Fn (fun (p : var (Pair State CsrIdx)) => quartz_eexpr:(
+  Definition readCsr {var} : fn _ _ mword := Fn (fun (p : var (Pair State CsrIdx)) => quartz_eexpr:(
     let st := #p .1 in let csr := #p .2 in
     if #csr == const CSR_mtvec then return #st..csr_mtvec
     else if #csr == const CSR_mepc then return #st..csr_mepc
@@ -514,18 +521,18 @@ Module csrFile. Section csrFile.
     else return _ 'd 0
   )).
 
-  Let writeCsr {var} : fn _ _ State := Fn (fun (p : var (Pair State (Pair CsrIdx mword))) => quartz_eexpr:(
+  Definition writeCsr {var} : fn _ _ State := Fn (fun (p : var (Pair State (Pair CsrIdx mword))) => quartz_eexpr:(
     let st := #p .1 in let csr := #p .2 .1 in let val := #p .2 .2 in
-    if #csr == const CSR_mtvec then
-      let st <- #st..csr_mtvec = #val in return #st
-    else if #csr == const CSR_mepc  then
-      let st <- #st..csr_mepc = #val in return #st
-    else if #csr == const CSR_mcause then
-      let st <- #st..csr_mcause = #val in return #st
-    else if #csr == const CSR_mtval then
-      let st <- #st..csr_mtval = #val in return #st
-    else if #csr == const CSR_mie then
-      let st <- #st..csr_mie = #val in return #st
+     if #csr == const CSR_mtvec then
+       let st <- #st..csr_mtvec = #val in return #st
+     else if #csr == const CSR_mepc  then
+       let st <- #st..csr_mepc = #val in return #st
+     else if #csr == const CSR_mcause then
+       let st <- #st..csr_mcause = #val in return #st
+     else if #csr == const CSR_mtval then
+       let st <- #st..csr_mtval = #val in return #st
+     else if #csr == const CSR_mie then
+       let st <- #st..csr_mie = #val in return #st
     else return #st
   )).
 
@@ -538,7 +545,7 @@ End csrFile. End csrFile.
 
 Module Decode. Section Decode.
   Import QStdlib.
-  Import (notations) eexpr expr. Local Open Scope string_scope.
+  Local Open Scope string_scope.
 
 
   Notation CsrIdx := (Bits 12) (only parsing).
@@ -565,7 +572,7 @@ Module Decode. Section Decode.
   { rs1Valid : Bool;
     rs2Valid : Bool;
     rdValid : Bool;
-    itype : InstType; 
+    itype : InstType;
     immediateType : ImmType;
   }.
   Definition InstrProps := type.reify'' instrProps.
@@ -586,38 +593,38 @@ Module Decode. Section Decode.
   }.
   Definition DecodeFields := type.reify'' decodeFields.
 
-  Let Funct7 {var} : fn var (Bits 32) (Bits 7) :=
+  Definition Funct7 {var} : fn var (Bits 32) (Bits 7) :=
       ExtractBits 25 .
-  Let Funct3 {var} : fn var (Bits 32) (Bits 3) := 
-      ExtractBits 12 .  
-  Let Opcode {var} : fn var (Bits 32) (Bits 7) := 
-      ExtractBits 0 .  
-  Let Csr12 {var} : fn var (Bits 32) (Bits 12) :=
+  Definition Funct3 {var} : fn var (Bits 32) (Bits 3) :=
+      ExtractBits 12 .
+  Definition Opcode {var} : fn var (Bits 32) (Bits 7) :=
+      ExtractBits 0 .
+  Definition Csr12 {var} : fn var (Bits 32) (Bits 12) :=
       ExtractBits 20 .
 
   (* Field extractors mirroring [griffin/isaSpec/IsaParams.v:getFields]. *)
-  Let Rs1Idx {var} : fn var (Bits 32) (Bits 5) :=
+  Definition Rs1Idx {var} : fn var (Bits 32) (Bits 5) :=
     QStdlib.ExtractBits 15.
-  Let Rs2Idx {var} : fn var (Bits 32) (Bits 5) :=
+  Definition Rs2Idx {var} : fn var (Bits 32) (Bits 5) :=
     QStdlib.ExtractBits 20.
-  Let RdIdx {var} : fn var (Bits 32) (Bits 5) :=
+  Definition RdIdx {var} : fn var (Bits 32) (Bits 5) :=
     QStdlib.ExtractBits 7.
 
 
   (* Immediate constructors (all sign-extended to 32 bits). *)
-  Let ImmI {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
+  Definition ImmI {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
   let imm12 : Bits 12 := { ExtractBits 20} ( #inst ) in
   return $(expr.Unop unop.SignedResize (expr.Var imm12))
   )).
 
-  Let ImmS {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
+  Definition ImmS {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
   let hi7 : Bits 7 := { ExtractBits 25 } ( #inst ) in
   let lo5 : Bits 5 := { ExtractBits 7 } (#inst ) in
   let imm12 : Bits 12 := Concat ((#hi7, #lo5)) in
   return $(expr.Unop unop.SignedResize (expr.Var imm12))
   )).
 
-  Let ImmB {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
+  Definition ImmB {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
   let imm_bit31 : Bits 1 := { ExtractBits 31 } ( #inst ) in
   let imm_bit7 : Bits 1 := { ExtractBits 7 } ( #inst ) in
   let imm_bits25_6 : Bits 6 := { ExtractBits 25 } ( #inst ) in
@@ -630,7 +637,7 @@ Module Decode. Section Decode.
   return $(expr.Unop unop.SignedResize (expr.Var imm13))
   )).
 
-  Let ImmU {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
+  Definition ImmU {var} : fn var (Bits 32) (Bits 32) := Fn (fun (inst: var mword) => quartz_eexpr:(
   let u20 : Bits 20 := {ExtractBits 12} ( #inst ) in
   let z12 : Bits 12 := _ 'd 0 in
   let imm32 : Bits 32 := Concat ((#u20, #z12)) in
@@ -639,30 +646,19 @@ Module Decode. Section Decode.
 
   (* Bundles all raw instruction fields; mirrors [griffin/isaSpec/IsaParams.v:getFields]. *)
   Definition getFields {var} : fn var (Bits 32) DecodeFields := Fn (fun (inst: var mword) => quartz_eexpr:(
-    let rs1Idx := Rs1Idx ( #inst ) in
-    let rs2Idx := Rs2Idx ( #inst ) in
-    let rdIdx  := RdIdx  ( #inst ) in
-    let csrIdx := Csr12  ( #inst ) in
-    let immI   := ImmI   ( #inst ) in
-    let immS   := ImmS   ( #inst ) in
-    let immB   := ImmB   ( #inst ) in
-    let immU   := ImmU   ( #inst ) in
-    let opcode := Opcode ( #inst ) in
-    let funct3 := Funct3 ( #inst ) in
-    let funct7 := Funct7 ( #inst ) in
     let ret <- init_struct DecodeFields {
-      D_rs1Idx := #rs1Idx;
-      D_rs2Idx := #rs2Idx;
-      D_rdIdx  := #rdIdx;
-      D_csrIdx := #csrIdx;
-      D_immI   := #immI;
-      D_immS   := #immS;
-      D_immB   := #immB;
-      D_immU   := #immU;
-      D_csr    := #csrIdx;
-      D_opcode := #opcode;
-      D_funct3 := #funct3;
-      D_funct7 := #funct7
+      D_rs1Idx := { Rs1Idx } ( #inst );
+      D_rs2Idx := { Rs2Idx } ( #inst );
+      D_rdIdx  := { RdIdx  } ( #inst );
+      D_csrIdx := { Csr12  } ( #inst );
+      D_immI   := { ImmI   } ( #inst );
+      D_immS   := { ImmS   } ( #inst );
+      D_immB   := { ImmB   } ( #inst );
+      D_immU   := { ImmU   } ( #inst );
+      D_csr    := { Csr12  } ( #inst );
+      D_opcode := { Opcode } ( #inst );
+      D_funct3 := { Funct3 } ( #inst );
+      D_funct7 := { Funct7 } ( #inst )
     } in
     return #ret
   )).
@@ -692,13 +688,7 @@ Module Decode. Section Decode.
     let funct3 := Funct3 ( #inst ) in
     let funct7 := Funct7 ( #inst ) in
     let csr12 := Csr12 ( #inst ) in
-    let illegal <- init_struct InstrProps { 
-                  rs1Valid := false;
-                  rs2Valid := false;
-                  rdValid := false;
-                  itype := const Inst_Illegal;
-                  immediateType := const Imm_none } in
-    let ret <- init_struct InstrProps { 
+    let illegal <- init_struct InstrProps {
                   rs1Valid := false;
                   rs2Valid := false;
                   rdValid := false;
@@ -706,90 +696,90 @@ Module Decode. Section Decode.
                   immediateType := const Imm_none } in
     (* LW: load *)
     if (#opcode == const opcode_LOAD) & (#funct3 == const funct3_LW) then
-       init_struct InstrProps { 
-                    rs1Valid := true;
-                    rs2Valid := false;
-                    rdValid := true;
-                    itype := const Inst_Load;
-                    immediateType := const Imm_I } 
-    else 
+       init_struct InstrProps {
+                     rs1Valid := true;
+                     rs2Valid := false;
+                     rdValid := true;
+                     itype := const Inst_Load;
+                     immediateType := const Imm_I }
+    else
     (* ADDI: alu immediate *)
     if (#opcode == const opcode_OP_IMM) & (#funct3 == const funct3_ADDI) then
-      init_struct InstrProps { 
-                    rs1Valid := true;
-                    rs2Valid := false;
-                    rdValid := true;
-                    itype := const Inst_Alu;
-                    immediateType := const Imm_I }
-    else 
+       init_struct InstrProps {
+                     rs1Valid := true;
+                     rs2Valid := false;
+                     rdValid := true;
+                     itype := const Inst_Alu;
+                     immediateType := const Imm_I }
+    else
     (* AUIPC *)
     if #opcode == const opcode_AUIPC then
-       init_struct InstrProps { 
-                    rs1Valid := false;
-                    rs2Valid := false;
-                    rdValid := true;
-                    itype := const Inst_Alu;
-                    immediateType := const Imm_U } 
-    else 
+       init_struct InstrProps {
+                     rs1Valid := false;
+                     rs2Valid := false;
+                     rdValid := true;
+                     itype := const Inst_Alu;
+                     immediateType := const Imm_U }
+    else
     (* SW: store *)
     if (#opcode == const opcode_STORE) & (#funct3 == const funct3_SW) then
-       init_struct InstrProps { 
-                    rs1Valid := true;
-                    rs2Valid := true;
-                    rdValid := false;
-                    itype := const Inst_Store;
-                    immediateType := const Imm_S }
-    else 
+       init_struct InstrProps {
+                     rs1Valid := true;
+                     rs2Valid := true;
+                     rdValid := false;
+                     itype := const Inst_Store;
+                     immediateType := const Imm_S }
+    else
     (* ADD: alu register *)
     if (#opcode == const opcode_OP) & (#funct3 == const funct3_ADD) & (#funct7 == const funct7_ADD) then
-       init_struct InstrProps { 
-                    rs1Valid := true;
-                    rs2Valid := true;
-                    rdValid := true;
-                    itype := const Inst_Alu;
-                    immediateType := const Imm_none } 
-    else 
+       init_struct InstrProps {
+                     rs1Valid := true;
+                     rs2Valid := true;
+                     rdValid := true;
+                     itype := const Inst_Alu;
+                     immediateType := const Imm_none }
+    else
     (* BEQ: branch *)
     if (#opcode == const opcode_BRANCH) & (#funct3 == const funct3_BEQ) then
-       init_struct InstrProps { 
-                    rs1Valid := true;
-                    rs2Valid := true;
-                    rdValid := false;
-                    itype := const Inst_Ctrl;
-                    immediateType := const Imm_B }
-    else 
+       init_struct InstrProps {
+                     rs1Valid := true;
+                     rs2Valid := true;
+                     rdValid := false;
+                     itype := const Inst_Ctrl;
+                     immediateType := const Imm_B }
+    else
     (* JALR: jump and link register *)
     if (#opcode == const opcode_JALR) & (#funct3 == const funct3_JALR) then
-       init_struct InstrProps { 
-                    rs1Valid := true;
-                    rs2Valid := false;
-                    rdValid := true;
-                    itype := const Inst_Ctrl;
-                    immediateType := const Imm_I }
-    else 
+       init_struct InstrProps {
+                     rs1Valid := true;
+                     rs2Valid := false;
+                     rdValid := true;
+                     itype := const Inst_Ctrl;
+                     immediateType := const Imm_I }
+    else
     (* MUL *)
     if (#opcode == const opcode_OP) & (#funct3 == const funct3_MUL) & (#funct7 == const funct7_MUL) then
-      init_struct InstrProps { 
-                    rs1Valid := true;
-                    rs2Valid := true;
-                    rdValid := true;
-                    itype := const Inst_Mul;
-                    immediateType := const Imm_none }
-    else 
+       init_struct InstrProps {
+                     rs1Valid := true;
+                     rs2Valid := true;
+                     rdValid := true;
+                     itype := const Inst_Mul;
+                     immediateType := const Imm_none }
+    else
     (* CSRRW: system *)
     if (#opcode == const opcode_SYSTEM) & (#funct3 == const funct3_CSRRW) then
-      init_struct InstrProps { 
-                    rs1Valid := true;
-                    rs2Valid := false;
-                    rdValid := true;
-                    itype := const Inst_System;
-                    immediateType := const Imm_none }
+       init_struct InstrProps {
+                     rs1Valid := true;
+                     rs2Valid := false;
+                     rdValid := true;
+                     itype := const Inst_System;
+                     immediateType := const Imm_none }
     else
       return #illegal
   )).
 
   Definition getImm {var} : fn var _ mword := Fn (fun (p: var (Pair DecodeFields InstrProps)) => quartz_eexpr:(
-    let flds := #p.1 in let props := #p.2 in 
+    let flds := #p.1 in let props := #p.2 in
     if (#props..immediateType == const Imm_I) then return #flds..D_immI
     else if (#props..immediateType == const Imm_S) then return #flds..D_immS
     else if (#props..immediateType == const Imm_B) then return #flds..D_immB
@@ -812,17 +802,17 @@ Module Decode. Section Decode.
   }.
   Definition AluOutput := type.reify'' aluOutput.
 
-  Definition execALU {var} : fn var _ AluOutput := 
+  Definition execALU {var} : fn var _ AluOutput :=
     Fn (fun (p: var AluInput) => quartz_eexpr:(
-      let imm := getImm ((#p..alu_in_flds, #p..alu_in_props)) in 
+      let imm := getImm ((#p..alu_in_flds, #p..alu_in_props)) in
       if (#p..alu_in_flds..D_opcode == const opcode_AUIPC) then
         init_struct AluOutput { alu_out_reg := #p..alu_in_pc + #imm;
-                                          alu_out_csr := _ 'd 0 } 
+                                          alu_out_csr := _ 'd 0 }
       else if (#p..alu_in_flds..D_opcode == const opcode_SYSTEM) then
         init_struct AluOutput { alu_out_reg := #p..alu_in_csrval;
                                           alu_out_csr := #p..alu_in_rs1val }
-      else 
-        let alu_src1 := #p..alu_in_rs1val in 
+      else
+        let alu_src1 := #p..alu_in_rs1val in
         let alu_src2 := if (#p..alu_in_props..immediateType == const Imm_none) then
                           #p..alu_in_rs2val
                         else #imm in
@@ -830,9 +820,9 @@ Module Decode. Section Decode.
                                           alu_out_csr := _ 'd 0}
    )).
 
-  Definition nextPc {var} : fn var _ mword := Fn (fun (p: var mword) => 
-                                             quartz_eexpr:(return #p + _ 'd 4)). 
-  Let is_word_aligned {var} : fn var _ Bool := Fn (fun (addr: var mword) => quartz_eexpr:(
+  Definition nextPc {var} : fn var _ mword := Fn (fun (p: var mword) =>
+                                             quartz_eexpr:(return #p + _ 'd 4)).
+  Definition is_word_aligned {var} : fn var _ Bool := Fn (fun (addr: var mword) => quartz_eexpr:(
     return (#addr & (_ 'd 3)) == _ 'd 0)).
 
   Definition EXN_InstructionAddressMisaligned : mword := Zmod.of_Z _ 0.
@@ -858,29 +848,29 @@ Module Decode. Section Decode.
   }.
   Definition CtrlOutput := type.reify'' ctrlOutput.
 
-  Definition execControl {var} 
+  Definition execControl {var}
     : fn var _ CtrlOutput := Fn (fun (p: var CtrlInput) => quartz_eexpr:(
-      let flds := #p..ctrl_in_flds in 
+      let flds := #p..ctrl_in_flds in
       let props := #p..ctrl_in_props in
       let pc := #p..ctrl_in_pc in
       let rs1val := #p..ctrl_in_rs1val in
       let rs2val := #p..ctrl_in_rs2val in
-      let imm := getImm ((#flds, #props)) in 
-        let isJalr := ((#flds..D_opcode == const opcode_JALR) 
-                     & (#flds..D_funct3 == const funct3_JALR)) in 
+      let imm := getImm ((#flds, #props)) in
+        let isJalr := ((#flds..D_opcode == const opcode_JALR)
+                     & (#flds..D_funct3 == const funct3_JALR)) in
       if (#props..itype == const Inst_Ctrl) then
         if #isJalr then
-          let nextPC := (#rs1val + #imm) & (~ (_ 'd 1)) in 
-          let isAligned := is_word_aligned (#nextPC) in 
+          let nextPC := (#rs1val + #imm) & (~ (_ 'd 1)) in
+          let isAligned := is_word_aligned (#nextPC) in
           init_struct CtrlOutput { ctrl_out_taken := true;
                                    ctrl_out_pc := #nextPC;
                                    ctrl_out_isExn := ~#isAligned;
                                    ctrl_out_exnCode := const EXN_InstructionAddressMisaligned;
                                    ctrl_out_mtval := #nextPC }
         else (* BEQ *)
-          let taken := (#rs1val == #rs2val) in 
-          let nextPC := #pc + #imm in 
-          let isAligned := is_word_aligned (#nextPC) in 
+          let taken := (#rs1val == #rs2val) in
+          let nextPC := #pc + #imm in
+          let isAligned := is_word_aligned (#nextPC) in
           init_struct CtrlOutput { ctrl_out_taken := #taken;
                                    ctrl_out_pc := (if #taken then #nextPC else nextPc (#pc));
                                    ctrl_out_isExn := ~#isAligned;
@@ -898,33 +888,33 @@ Module Decode. Section Decode.
   { memAddrOut_addr : mword;
     memAddrOut_isExn : Bool;
     memAddrOut_exnCode : mword;
-    memAddrOut_mtval : mword 
+    memAddrOut_mtval : mword
   }.
   Definition MemAddrOutput := type.reify'' memAddrOutput.
 
   Definition memAddr {var} : fn var _ MemAddrOutput :=
     Fn (fun (p: var (Pair (Pair DecodeFields InstrProps) mword)) => quartz_eexpr:(
       let flds := #p.1.1 in
-      let props := #p.1.2 in 
-      let rs1val := #p.2 in 
-      let imm := getImm ((#flds, #props)) in 
+      let props := #p.1.2 in
+      let rs1val := #p.2 in
+      let imm := getImm ((#flds, #props)) in
       if ((#props..itype == const Inst_Store) | (#props..itype == const Inst_Load)) then
-         let addr  := #rs1val + #imm in 
+         let addr  := #rs1val + #imm in
          let isAligned := is_word_aligned (#addr) in
          let exnCode := if (#props..itype == const Inst_Store) then
                           const EXN_StoreAddressMisaligned
-                        else const EXN_LoadAddressMisaligned in 
+                        else const EXN_LoadAddressMisaligned in
          init_struct MemAddrOutput { memAddrOut_addr := #addr;
                                      memAddrOut_isExn := ~#isAligned;
                                      memAddrOut_exnCode := #exnCode;
                                      memAddrOut_mtval := #addr }
-      else 
+      else
          init_struct MemAddrOutput { memAddrOut_addr := _ 'd 0;
                                      memAddrOut_isExn := false;
                                      memAddrOut_exnCode := _ 'd 0;
                                      memAddrOut_mtval := _ 'd 0}
     )).
-      
+
   (* Record decodeOut := { *)
   (*   D_inst : mword; *)
   (*   D_flds : InstrProps; *)
@@ -961,7 +951,7 @@ Module CPU.
   Record Cpu {var} {t_mem_req t_mem_resp: type} (t_state: type) := {
     enqResp : mem_type -> fn var (Pair t_state t_mem_resp) t_state;
     deqReq : mem_type -> fn var t_state t_state;
-    setInterrupt : fn var (Pair t_state (Pair Bool mword)) t_state; 
+    setInterrupt : fn var (Pair t_state (Pair Bool mword)) t_state;
     tick : fn var t_state t_state;
     canEnqResp : mem_type -> fn var t_state Bool;
     canDeqReq : mem_type -> fn var t_state Bool;
@@ -970,16 +960,16 @@ Module CPU.
 
 End CPU. Notation Cpu := CPU.Cpu (only parsing).
 
-Module cpu. 
+Module cpu.
   Notation width := 32.
   Notation mword := (Bits width).
   Section cpuTypes.
-    Record mem_req_t := { mem_req_is_store : Bool; 
+    Record mem_req_t := { mem_req_is_store : Bool;
                           mem_req_addr : mword;
                           mem_req_data : mword }.
     Definition Mem_req_t := type.reify'' mem_req_t.
 
-    Record mem_resp_t := { mem_resp_addr : mword ; 
+    Record mem_resp_t := { mem_resp_addr : mword ;
                            mem_resp_data : mword }.
     Definition Mem_resp_t := type.reify'' mem_resp_t.
 
@@ -1026,7 +1016,11 @@ Module cpu.
     Context {bht_idxSz: Z}.
     Context {btb_tagSz: Z}.
     Context {btb_idxSz: Z}.
-    Parameter (isMMIOAddr : forall {var}, fn var mword Bool).
+    Definition isMMIOAddr {var} : fn var mword Bool := Fn (fun pc => quartz_eexpr:(
+      let shift_amt : mword := _ 'd 31 in
+      let shifted_pc := #pc >> #shift_amt in
+      return $(expr.Unop unop.UnsignedResize (expr.Var shifted_pc))
+    )).
 
     Definition log_nregs : Z := 5.
     Definition nregs : nat := Z.to_nat (2^log_nregs).
@@ -1052,61 +1046,62 @@ Module cpu.
     ; InterruptSrc : mword
     ; Bht : @bht.State bht_idxSz
     ; Btb : @btb.State width btb_tagSz btb_idxSz
-    }. 
+    }.
 
 
     Definition State := type.reify'' state.
     Coercion rep (v : state) : type.reify'' state :=
      ltac2:(let t := struct.rep &v in exact $t).
 
-    Import (notations) eexpr expr. Local Open Scope string_scope.
+    Local Open Scope string_scope.
     Import QStdlib.
 
 
-    Notation fifo1_full := (Fifo.full _ _ (fifo1.impl _)).
-    Notation fifo1_empty := (Fifo.empty _ _ (fifo1.impl _)).
-    Notation fifo1_enq := (Fifo.enq _ _ (fifo1.impl _)).
-    Notation fifo1_first := (Fifo.first _ _ (fifo1.impl _)).
-    Notation fifo1_deq := (Fifo.deq _ _ (fifo1.impl _)).
-    Notation btb_update := (Btb.update _ (btb.impl)).  
-    Notation btb_predPc := (Btb.predPc _ (btb.impl)).  
-    Notation rf_isLocked := (RfScored.isLocked (rfScored.impl _ )).
-    Notation rf_read := (RfScored.read (rfScored.impl _)).
-    Notation rf_acquire := (RfScored.acquireLock (rfScored.impl _)).
-    Notation rf_release := (RfScored.releaseLock (rfScored.impl _)).
-    Notation csr_read := (CsrFile.readCsr (csrFile.impl)).
-    Notation csr_write := (CsrFile.writeCsr (csrFile.impl)).
-    Notation bht_update := (Bht.update _ (bht.impl)).  
-    Notation bht_ppcDp := (Bht.ppcDp _ (bht.impl)).
-    Notation mul_full := (Multiplier.full _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_enq := (Multiplier.enq _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_tick := (Multiplier.tick _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_deq := (Multiplier.deq _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_peek := (Multiplier.peek _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_ready := (Multiplier.respReady _ (multiplier.impl mul_LogNSteps)).
+    Notation fifo1_full := (fifo1.full _).
+    Notation fifo1_empty := (fifo1.empty _).
+    Notation fifo1_enq := (fifo1.enq _).
+    Notation fifo1_first := (fifo1.first _).
+    Notation fifo1_deq := (fifo1.deq _).
+    Notation btb_update := btb.update.
+    Notation btb_predPc := btb.predPc.
+    Notation rf_isLocked := (rfScored.isLocked _).
+    Notation rf_read := (rfScored.read _).
+    Notation rf_acquire := (rfScored.acquireLock _).
+    Notation rf_release := (rfScored.releaseLock _).
+    Notation csr_read := csrFile.readCsr.
+    Notation csr_write := csrFile.writeCsr.
+    Notation bht_update := bht.update.
+    Notation bht_ppcDp := bht.ppcDp.
+    Notation mul_full := (multiplier.full mul_LogNSteps).
+    Notation mul_enq := (multiplier.enq mul_LogNSteps).
+    Notation mul_tick := (multiplier.tick mul_LogNSteps).
+    Notation mul_deq := (multiplier.deq mul_LogNSteps).
+    Notation mul_peek := (multiplier.peek mul_LogNSteps).
+    Notation mul_ready := (multiplier.respReady mul_LogNSteps).
 
-    Let struct_test {var} := Fn (fun (st : var State) => quartz_eexpr:(
-        let pc := #st..Pc in 
+    Definition struct_test {var} := Fn (fun (st : var State) => quartz_eexpr:(
+        let pc := #st..Pc in
         let req <- init_struct Mem_req_t {
           mem_req_is_store := true;
-          mem_req_addr := #pc
+          mem_req_addr := #pc;
+          mem_req_data := _ 'd 0
         } in
         return #req )).
 
 
     Lemma struct_test_ok (st : state) :
-      fn.interp struct_test st = {| mem_req_is_store := true; 
+      fn.interp struct_test st = {| mem_req_is_store := true;
                                     mem_req_addr := st.(Pc);
                                     mem_req_data := Zmod.zero |}.
     Proof.
       reflexivity.
     Qed.
-                                                                   
+
     Definition fetch_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
       if (fifo1_full (#st..ToIMem)) | (fifo1_full (#st..F2d)) then
-        return #st 
+        return #st
       else
-        let ppc := btb_predPc ((#st..Btb, #st..Pc)) in 
+        let ppc := btb_predPc ((#st..Btb, #st..Pc)) in
         let imem_req <- init_struct Mem_req_t {
           mem_req_is_store := false;
           mem_req_addr := #st..Pc;
@@ -1116,13 +1111,13 @@ Module cpu.
           f2d_pc := #st..Pc;
           f2d_ppc := #ppc;
           f2d_epoch := #st..Epoch;
-          f2d_depoch := #st..Depoch; 
+          f2d_depoch := #st..Depoch;
           f2d_iepoch := #st..Iepoch
-        } in                          
-        let st <- #st..Pc = #ppc in 
+        } in
+        let st <- #st..Pc = #ppc in
         let st <- #st..ToIMem = fifo1_enq((#st..ToIMem, #imem_req)) in
         let st <- #st..F2d = fifo1_enq((#st..F2d, #f2d_req)) in
-        return #st 
+        return #st
     )).
 
     (* TODO: enum type *)
@@ -1151,12 +1146,12 @@ Module cpu.
           let e2w_full := fifo1_full (#st..E2w) in
           let is_sys := (#props..itype == const Inst_System) in
           if #d2e_full | (#locked1 | #locked2 | #locked_rd) | (#is_sys & #e2w_full) then
-            return #st (* stall *) 
+            return #st (* stall *)
           else
             let rs1 := rf_read ((#st..Rf, #rs1_idx)) in
             let rs2 := rf_read ((#st..Rf, #rs2_idx)) in
             let csr_val := csr_read ((#st..Csrs, #flds..D_csrIdx)) in
-            let imm := getImm ((#flds, #props)) in 
+            let imm := getImm ((#flds, #props)) in
             let ppcDP := if (#props..itype == const Inst_Ctrl) then
                            bht_ppcDp ((#st..Bht, (#f2d_book..f2d_pc, #f2d_book..f2d_pc + #imm)))
                          else #f2d_book..f2d_ppc in
@@ -1175,45 +1170,45 @@ Module cpu.
             let st <- #st..D2e = fifo1_enq((#st..D2e, #dbook)) in
             let st <- if (#ppcDP == #f2d_book..f2d_ppc) then
                        return #st
-                     else 
-                       let st <- #st..Pc = #ppcDP in 
-                       let st <- #st..Depoch = ~#st..Depoch in 
-                       return #st in 
+                     else
+                       let st <- #st..Pc = #ppcDP in
+                       let st <- #st..Depoch = ~#st..Depoch in
+                       return #st in
             if #props..rdValid then
-              let st <- #st..Rf = rf_acquire ((#st..Rf, #rd_idx)) in 
+              let st <- #st..Rf = rf_acquire ((#st..Rf, #rd_idx)) in
               return #st
             else
               return #st
-        else 
-          let st <- #st..F2d = (fifo1_deq (#st..F2d)) in
-          let st <- #st..FromIMem = (fifo1_deq (#st..FromIMem)) in
+        else
+          let st <- #st..F2d = fifo1_deq (#st..F2d) in
+          let st <- #st..FromIMem = fifo1_deq (#st..FromIMem) in
           return #st
      )).
 
-    
-    Let e2w_exn {var} : fn var _ E2w_bookkeeping := 
+
+    Definition e2w_exn {var} : fn var _ E2w_bookkeeping :=
           Fn (fun (p: var (Pair mword (Pair mword (Pair mword mword)))) => quartz_eexpr:(
       let inst := #p.1 in
-      let exnCode := #p.2.1 in 
+      let exnCode := #p.2.1 in
       let exnMtval := #p.2.2.1 in
       let mepc := #p.2.2.2 in
-      init_struct E2w_bookkeeping { 
+      init_struct E2w_bookkeeping {
                             e2w_alu := _ 'd 0;
                             e2w_csr := _ 'd 0;
-                            e2w_exnInfo := (true, #exnCode, #exnMtval, #mepc);
                             e2w_inst := #inst;
+                            e2w_exnInfo := (true, #exnCode, #exnMtval, #mepc);
                             e2w_isMMIO := false;
-                            e2w_nextPc := _ 'd 0 })).
+                            e2w_nextPc := _ 'd 0 } )).
 
     Definition execute_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
       let dbook := fifo1_first (#st..D2e) in
       let inst := #dbook..d2e_inst in
-      let _pc := #dbook..d2e_pc in 
+      let _pc := #dbook..d2e_pc in
       let flds := getFields (#inst) in
       let props := getInstrProps (#inst) in
       if fifo1_empty (#st..D2e) then
         return #st (* stall; nothing to do *)
-      else if ((#dbook..d2e_epoch == #st..Epoch) &  
+      else if ((#dbook..d2e_epoch == #st..Epoch) &
                (#dbook..d2e_iepoch == #st..Iepoch)) then
         let rval1 := #dbook..d2e_rval1 in
         let rval2 := #dbook..d2e_rval2 in
@@ -1224,52 +1219,52 @@ Module cpu.
                                             alu_in_rs2val := #rval2;
                                             alu_in_csrval := #csr_val;
                                             alu_in_pc := #_pc
-                                          } in 
-        let alu_csr_out := execALU (#alu_in) in 
+                                          } in
+        let alu_csr_out := execALU (#alu_in) in
         let ctrl_in <- init_struct CtrlInput { ctrl_in_flds := #flds;
                                               ctrl_in_props := #props;
                                               ctrl_in_pc := #_pc;
                                               ctrl_in_rs1val := #rval1;
                                               ctrl_in_rs2val := #rval2
-                                            } in 
-        let ctrl_out := execControl (#ctrl_in) in 
-        let nextPC := #ctrl_out..ctrl_out_pc in 
-        if fifo1_full (#st..E2w) | 
+                                            } in
+        let ctrl_out := execControl (#ctrl_in) in
+        let nextPC := #ctrl_out..ctrl_out_pc in
+        if fifo1_full (#st..E2w) |
            ((#props..itype == const Inst_Mul) & mul_full (#st..Mul)) then
           return #st (* stall *)
         else
           let St_ExBook_IsExn <-
-            if (#props..itype == const Inst_Illegal) then 
-              if ( (#props..itype == const Inst_Store) 
+            if (#props..itype == const Inst_Illegal) then
+              if ( (#props..itype == const Inst_Store)
                  | (#props..itype == const Inst_Load)) then (* isMem *)
-                let memOut := memAddr (((#flds, #props), #rval1)) in 
-                let addr := #memOut..memAddrOut_addr in 
-                let req <- init_struct Mem_req_t { 
-                              mem_req_is_store := ~(#props..itype == const Inst_Load); 
+                let memOut := memAddr (((#flds, #props), #rval1)) in
+                let addr := #memOut..memAddrOut_addr in
+                let req <- init_struct Mem_req_t {
+                              mem_req_is_store := ~(#props..itype == const Inst_Load);
                               mem_req_addr := #addr ;
                               mem_req_data := if (#props..itype == const Inst_Load) then
                                                 _ 'd 0
                                               else #rval2
-                          } in 
+                           } in
                 let e2w <- init_struct E2w_bookkeeping {
                             e2w_alu := _ 'd 0;
                             e2w_csr := _ 'd 0;
-                            e2w_exnInfo := (#memOut..memAddrOut_isExn, 
-                                            #memOut..memAddrOut_exnCode,
-                                            #memOut..memAddrOut_mtval, 
-                                            #_pc);
                             e2w_inst := #inst;
+                            e2w_exnInfo := (#memOut..memAddrOut_isExn,
+                                            #memOut..memAddrOut_exnCode,
+                                            #memOut..memAddrOut_mtval,
+                                            #_pc);
                             e2w_isMMIO := ~#memOut..memAddrOut_isExn & isMMIOAddr(#addr);
                             e2w_nextPc := #nextPC } in
                 if #memOut..memAddrOut_isExn then
                   return (#st, (#e2w, true))
                 else if isMMIOAddr(#addr) then
-                  let st <- #st..ToMMIO = fifo1_enq((#st..ToMMIO, #req)) in 
+                  let st <- #st..ToMMIO = fifo1_enq((#st..ToMMIO, #req)) in
                   return (#st, (#e2w, false))
-                else 
-                  let st <- #st..ToDMem = fifo1_enq((#st..ToDMem , #req)) in 
+                else
+                  let st <- #st..ToDMem = fifo1_enq((#st..ToDMem , #req)) in
                   return (#st, (#e2w, false))
-              else if (#props..itype == const Inst_Mul) then 
+              else if (#props..itype == const Inst_Mul) then
                 let req <- init_struct multiplier.Req { multiplier.input_a := #rval1;
                                                        multiplier.input_b := #rval2
                                                      } in
@@ -1277,8 +1272,8 @@ Module cpu.
                 let e2w <- init_struct E2w_bookkeeping {
                             e2w_alu := #alu_csr_out..alu_out_reg ;
                             e2w_csr := #alu_csr_out..alu_out_csr;
-                            e2w_exnInfo := (false, _ 'd 0, _ 'd 0, _ 'd 0);
                             e2w_inst := #inst;
+                            e2w_exnInfo := (false, _ 'd 0, _ 'd 0, _ 'd 0);
                             e2w_isMMIO := false;
                             e2w_nextPc := #nextPC } in
                 return (#st, (#e2w, false))
@@ -1286,87 +1281,87 @@ Module cpu.
                 let st <- if (#props..itype == const Inst_Ctrl) then
                            #st..Bht = bht_update((#st..Bht, (#_pc, #ctrl_out..ctrl_out_taken)))
                          else return #st in
-                let isJalr := ((#flds..D_opcode == const opcode_JALR) 
-                     & (#flds..D_funct3 == const funct3_JALR)) in 
-                let isCtrlExn := #ctrl_out..ctrl_out_isExn in 
-                let ctrlExnCode := #ctrl_out..ctrl_out_exnCode  in 
-                let ctrlExnMtval := #ctrl_out..ctrl_out_mtval  in 
+                let isJalr := ((#flds..D_opcode == const opcode_JALR)
+                     & (#flds..D_funct3 == const funct3_JALR)) in
+                let isCtrlExn := #ctrl_out..ctrl_out_isExn in
+                let ctrlExnCode := #ctrl_out..ctrl_out_exnCode  in
+                let ctrlExnMtval := #ctrl_out..ctrl_out_mtval  in
                 let e2w <- init_struct E2w_bookkeeping {
                             e2w_alu := if #isJalr then
                                          nextPc (#_pc)
                                        else #alu_csr_out..alu_out_reg ;
                             e2w_csr := #alu_csr_out..alu_out_csr;
-                            e2w_exnInfo := (#isCtrlExn, #ctrlExnCode, #ctrlExnMtval, #_pc);
                             e2w_inst := #inst;
+                            e2w_exnInfo := (#isCtrlExn, #ctrlExnCode, #ctrlExnMtval, #_pc);
                             e2w_isMMIO := false;
                             e2w_nextPc := #nextPC } in
                 return (#st, (#e2w, #isCtrlExn))
             else (* illegal *)
               return (#st, (e2w_exn ((#inst, (const EXN_IllegalInstruction, (#inst, #_pc)))), true))
           in
-          let st := #St_ExBook_IsExn.1 in 
+          let st := #St_ExBook_IsExn.1 in
           let ex_book := #St_ExBook_IsExn.2.1 in
           let isExn := #St_ExBook_IsExn.2.2 in
-          let st <- #st..D2e = fifo1_deq (#st..D2e) in 
-          let st <- #st..E2w = fifo1_enq ((#st..E2w , #ex_book)) in 
+          let st <- #st..D2e = fifo1_deq (#st..D2e) in
+          let st <- #st..E2w = fifo1_enq ((#st..E2w , #ex_book)) in
           let st <- if (#nextPC == #dbook..d2e_ppc) then
                      return #st
                    else
                      let st <- #st..Epoch = ~#st..Epoch in
-                     let st <- #st..Pc = #nextPC in 
-                     let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #nextPC))) in 
-                     return #st in 
+                     let st <- #st..Pc = #nextPC in
+                     let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #nextPC))) in
+                     return #st in
           if #isExn then
             let trapHandlerAddr := csr_read ((#st..Csrs, const csrFile.CSR_mtvec)) in
             let st <- #st..Pc = #trapHandlerAddr in
-            let st <- #st..Epoch = ~#st..Epoch in 
-            let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #trapHandlerAddr))) in 
+            let st <- #st..Epoch = ~#st..Epoch in
+            let st <- #st..Btb = btb_update ((#st..Btb, (#_pc, #trapHandlerAddr))) in
             return #st
           else return #st
       else (* mispredicted *)
-        let st <- #st..D2e = (fifo1_deq (#st..D2e)) in 
+        let st <- #st..D2e = (fifo1_deq (#st..D2e)) in
         if #props..rdValid then (* release any write lock *)
           let st <- #st..Rf = rf_release((#st..Rf, #flds..D_rdIdx)) in
           return #st
         else
           return #st
     )).
-    Let handle_interrupt {var} : fn var (Pair State mword) State :=
+    Definition handle_interrupt {var} : fn var (Pair State mword) State :=
           Fn (fun (p: var (Pair State mword)) => quartz_eexpr:(
-      let st := #p.1 in 
+      let st := #p.1 in
       let nextPc := #p.2 in
-      let mie := csr_read ((#st..Csrs, const csrFile.CSR_mie)) in 
+      let mie := csr_read ((#st..Csrs, const csrFile.CSR_mie)) in
       if #st..Mip & ~(#mie == _ 'd 0) then
-        let trapHandlerAddr := csr_read ((#st..Csrs, const csrFile.CSR_mtvec)) in 
-        let st <- #st..Iepoch = ~(#st..Iepoch) in 
+        let trapHandlerAddr := csr_read ((#st..Csrs, const csrFile.CSR_mtvec)) in
+        let st <- #st..Iepoch = ~(#st..Iepoch) in
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mepc, #nextPc))) in
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mie, _ 'd 0))) in
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mtval, #st..InterruptSrc))) in
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mcause, _ 'd 0 ))) in
-        let st <- #st..Pc = #trapHandlerAddr in 
+        let st <- #st..Pc = #trapHandlerAddr in
         return #st
       else return #st
     )).
 
     Definition writeback_stage {var} := Fn (fun (st : var State) => quartz_eexpr:(
       let e2w_book := fifo1_first (#st..E2w) in
-      let inst := #e2w_book..e2w_inst in 
+      let inst := #e2w_book..e2w_inst in
       let flds := getFields (#inst) in
       let props := getInstrProps (#inst) in
-      let e2w_isExn := #e2w_book..e2w_exnInfo.1.1.1 in 
-      let exnCode := #e2w_book..e2w_exnInfo.1.1.2 in 
-      let exnMtval := #e2w_book..e2w_exnInfo.1.2 in 
-      let exnMepc := #e2w_book..e2w_exnInfo.2 in 
+      let e2w_isExn := #e2w_book..e2w_exnInfo.1.1.1 in
+      let exnCode := #e2w_book..e2w_exnInfo.1.1.2 in
+      let exnMtval := #e2w_book..e2w_exnInfo.1.2 in
+      let exnMepc := #e2w_book..e2w_exnInfo.2 in
       let isMem := (#props..itype == const Inst_Store) | (#props..itype == const Inst_Load)  in
-      let isMul := (#props..itype == const Inst_Mul) in 
-      if fifo1_empty (#st..E2w) | 
-         (~#e2w_isExn & 
+      let isMul := (#props..itype == const Inst_Mul) in
+      if fifo1_empty (#st..E2w) |
+         (~#e2w_isExn &
            ((#e2w_book..e2w_isMMIO & fifo1_empty (#st..FromMMIO)) |
-            (#isMem & ~#e2w_book..e2w_isMMIO & fifo1_empty (#st..FromDMem)) | 
+            (#isMem & ~#e2w_book..e2w_isMMIO & fifo1_empty (#st..FromDMem)) |
             (#isMul & ~mul_ready(#st..Mul)))) then
         return #st
       else if #e2w_isExn then
-        let st <- #st..E2w = fifo1_deq(#st..E2w) in 
+        let st <- #st..E2w = fifo1_deq(#st..E2w) in
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mie, _ 'd 0))) in
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mtval, #exnMtval))) in
         let st <- #st..Csrs = csr_write((#st..Csrs, (const csrFile.CSR_mcause, #exnCode))) in
@@ -1380,32 +1375,32 @@ Module cpu.
         let St_reg_csr <-
           if #e2w_book..e2w_isMMIO then
             let resp := fifo1_first (#st..FromMMIO) in
-            let st <- #st..FromMMIO = fifo1_deq (#st..FromMMIO) in 
-            return (#st, (#resp..mem_resp_data, 32 'd 0))  
+            let st <- #st..FromMMIO = fifo1_deq (#st..FromMMIO) in
+            return (#st, (#resp..mem_resp_data, 32 'd 0))
           else if #isMem then
             let resp := fifo1_first (#st..FromDMem) in
-            let st <- #st..FromDMem = fifo1_deq (#st..FromDMem) in 
-            return (#st, (#resp..mem_resp_data, 32 'd 0))  
+            let st <- #st..FromDMem = fifo1_deq (#st..FromDMem) in
+            return (#st, (#resp..mem_resp_data, 32 'd 0))
           else if #isMul then
-            let resp := mul_peek (#st..Mul) in 
-            let st <- #st..Mul = mul_deq (#st..Mul) in 
-            return (#st, ($(expr.Unop unop.UnsignedResize (expr.Var resp)), _ 'd 0))  
+            let resp := mul_peek (#st..Mul) in
+            let st <- #st..Mul = mul_deq (#st..Mul) in
+            return (#st, ($(expr.Unop unop.UnsignedResize (expr.Var resp)), _ 'd 0))
           else
             return (#st, (#e2w_book..e2w_alu, #e2w_book..e2w_csr)) in
         let st := #St_reg_csr.1 in
         let reg_data := #St_reg_csr.2.1 in
         let csr_data := #St_reg_csr.2.2 in
-        let st <- #st..E2w = fifo1_deq(#st..E2w) in 
+        let st <- #st..E2w = fifo1_deq(#st..E2w) in
         let st <- if #props..rdValid then
-                   #st..Rf = rf_release ((#st..Rf, #flds..D_rdIdx)) 
-                 else return #st in  
+                   #st..Rf = rf_release ((#st..Rf, #flds..D_rdIdx))
+                 else return #st in
         let st <- if (#props..itype == const Inst_System) then
-                   #st..Csrs = csr_write((#st..Csrs, (#flds..D_csrIdx, #csr_data))) 
+                   #st..Csrs = csr_write((#st..Csrs, (#flds..D_csrIdx, #csr_data)))
                  else return #st in
         return handle_interrupt ((#st, #e2w_book..e2w_nextPc))
     )).
     Definition tick_mul {var} := Fn (fun (st : var State) => quartz_eexpr:(
-      let st <- #st..Mul = mul_tick(#st..Mul) in 
+      let st <- #st..Mul = mul_tick(#st..Mul) in
       return #st)).
 
     Definition tick {var} := Fn (fun (st : var State) => quartz_eexpr:(
@@ -1413,7 +1408,7 @@ Module cpu.
       let st := execute_stage (#st) in
       let st := decode_stage (#st) in
       let st := fetch_stage (#st) in
-      let st := tick_mul (#st) in 
+      let st := tick_mul (#st) in
       return #st)).
 
     Notation foo := FromIMem.
@@ -1423,14 +1418,14 @@ Module cpu.
     (* | Imem *)
     (* | Dmem *)
     (* | Mmio. *)
-    
+
     (* Definition fromMem (mem: MemType) := *)
     (*   match mem with *)
     (*   | Imem => FromIMem *)
     (*   | Dmem => FromDMem *)
     (*   | Mmio => FromMMIO *)
     (*   end.  *)
-    
+
     (* Definition can_enq_resp (mem: MemType) {var} :=  *)
     (*   let mem := fromMem mem in  *)
     (*   Fn (fun (st : var State) => quartz_eexpr:( *)
@@ -1443,7 +1438,7 @@ Module cpu.
       Fn (fun (st : var State) => quartz_eexpr:(
       return ! fifo1_full (#st..FromDMem))).
     Definition can_enq_resp_mmio {var} :=
-      Fn (fun (st : var State) => quartz_eexpr:( 
+      Fn (fun (st : var State) => quartz_eexpr:(
       let e2w_empty := fifo1_empty (#st..E2w) in
       let reqEmpty := fifo1_empty (#st..ToMMIO) in
       let e2w_book := fifo1_first (#st..E2w) in
@@ -1472,16 +1467,16 @@ Module cpu.
       return fifo1_first (#st..ToMMIO ))).
 
     Definition set_pc {var} := Fn (fun (arg: var (Pair State mword) ) => quartz_eexpr:(
-      let st := #arg.1 in 
-      let pc := #arg.2 in 
+      let st := #arg.1 in
+      let pc := #arg.2 in
       let st <- #st..Pc = #pc in
       return #st )).
 
 
     Definition set_interrupt {var} := Fn (fun (arg: var (Pair State (Pair Bool mword)) ) => quartz_eexpr:(
-      let st := #arg.1 in 
-      let mip := #arg.2.1 in 
-      let interruptSrc := #arg.2.2 in 
+      let st := #arg.1 in
+      let mip := #arg.2.1 in
+      let interruptSrc := #arg.2.2 in
       let st <- #st..Mip = #mip in
       let st <- #st..InterruptSrc = #interruptSrc in
       return #st)).
@@ -1547,5 +1542,3 @@ Module cpu.
 
   End cpu.
 End cpu.
-
-End InterfaceExample.

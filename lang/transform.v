@@ -22,7 +22,7 @@ Section Forall_forall.
 End Forall_forall.
 End List.
 
-From quartz.lang Require Import domain Syntax ident_to_string let_lift.
+From quartz.lang Require Import domain Syntax ident_to_string.
 
 Open Scope Z_scope.
 
@@ -179,14 +179,14 @@ Module expr.
   End rmap.
 
   Definition unapp0l {var fn t} (e : expr var fn t) : expr var fn t :=
-    match e with
+    match e in expr _ _ t0 return expr var fn t0 with
     | Binop op e1 e2 =>
-        match op in binop.binop _ _ t return _ -> _ -> expr var fn t with
+        match op in binop.binop _ _ t0 return _ -> _ -> expr var fn t0 with
         | (@binop.App n m) as op => fun e1 e2 =>
         if (n =? 0) && (0 <=? m) then Unop unop.UnsignedResize e2 else Binop op e1 e2
         | op' => fun e1 e2 => Binop op' e1 e2
         end%bool e1 e2
-    | _ => e
+    | x => x
     end.
   Lemma interp_unapp0l {t} e : interp (@unapp0l _ _ t e) = interp e.
   Proof.
@@ -201,14 +201,14 @@ Module expr.
   Qed.
 
   Definition unapp0r {var fn t} (e : expr var fn t) : expr var fn t :=
-    match e with
+    match e in expr _ _ t0 return expr var fn t0 with
     | Binop op e1 e2 =>
-        match op in binop.binop _ _ t return _ -> _ -> expr var fn t with
+        match op in binop.binop _ _ t0 return _ -> _ -> expr var fn t0 with
         | (@binop.App n m) as op => fun e1 e2 =>
         if (m =? 0) && (0 <=? n) then Unop unop.UnsignedResize e1 else Binop op e1 e2
         | op' => fun e1 e2 => Binop op' e1 e2
         end%bool e1 e2
-    | _ => e
+    | x => x
     end.
   Lemma interp_unapp0r {t} e : interp (@unapp0r _ _ t e) = interp e.
   Proof.
@@ -223,7 +223,7 @@ Module expr.
   Qed.
 
   Definition unresizesame {var fn t} (e : expr var fn t) : expr var fn t :=
-    match e with
+    match e in expr _ _ t0 return expr var fn t0 with
       | Unop op e1 =>
         match op in unop.unop t1 t' return expr var fn t1 -> expr var fn t' with
         | @unop.Resize s n m => fun e1 =>
@@ -233,7 +233,7 @@ Module expr.
             end
         | op' => fun e1 => Unop op' e1
         end e1
-      | _ => e
+      | x => x
     end.
   Lemma interp_unresizesame {t} e : interp (@unresizesame _ _ t e) = interp e.
   Proof.

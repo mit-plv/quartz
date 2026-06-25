@@ -27,11 +27,11 @@ def generate_rules_for_file(path):
 
 (rule
  (target {test_name}.out)
- (deps ../../lang/transform.vo {src_path}.vo)
+ (deps ../../lang/transform.vo {src_path}.vo ../../lang/pp.vo)
  (action
   (with-stdout-to %{{target}}
    (pipe-stdout
-    (echo "Require Import quartz.lang.domain quartz.lang.Syntax quartz.lang.transform quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute bits.hex (type.pack (fns.interp {test_name} (type.default _))).\\n")
+    (echo "Require Import quartz.lang.pp quartz.lang.Syntax quartz.lang.transform quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute pp.bits (type.pack (fns.interp {test_name} (type.default _))).\\n")
     (run coqtop -q -Q .. quartz.test -Q ../../lang quartz.lang)
     (run python3 -c "import sys, re; s = sys.stdin.read(); m = re.search(r\\"=\\\\s*\\\\\\"(.*)\\\\\\\"(?:\\\\s*:\\\\s*string)?\\", s, re.DOTALL); sys.stdout.write((m.group(1).replace('\\\\\\\"\\\\\\\"', '\\\\\\\"') + chr(10)) if m else s)")))))
 
@@ -41,7 +41,7 @@ def generate_rules_for_file(path):
  (action
   (with-stdout-to %{{target}}
    (pipe-stdout
-    (echo "Require Import quartz.lang.Syntax quartz.lang.sv quartz.test.{test_name}. Import String.\\nLocal Open Scope string_scope.\\nCompute sv.pp {test_name}.\\n")
+    (echo "Require Import quartz.lang.Syntax quartz.lang.sv quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute sv.pp {test_name}.\\n")
     (run coqtop -q -Q .. quartz.test -Q ../../lang quartz.lang)
     (run python3 -c "import sys, re; s = sys.stdin.read(); m = re.search(r\\"=\\\\s*\\\\\\"(.*)\\\\\\\"(?:\\\\s*:\\\\s*string)?\\", s, re.DOTALL); sys.stdout.write((m.group(1).replace('\\\\\\\"\\\\\\\"', '\\\\\\\"') + chr(10)) if m else s)")))))
 
@@ -51,7 +51,7 @@ def generate_rules_for_file(path):
  (action
   (with-stdout-to %{{target}}
    (pipe-stdout
-    (echo "Require Import quartz.lang.Syntax quartz.lang.cpp quartz.test.{test_name}. Import String.\\nLocal Open Scope string_scope.\\nCompute cpp.pp_test_driver (ltac:(repeat (constructor || cbn || discriminate))) {test_name}.\\n")
+    (echo "Require Import quartz.lang.Syntax quartz.lang.cpp quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute cpp.pp_test_driver (ltac:(repeat (constructor || cbn || discriminate))) {test_name}.\\n")
     (run coqtop -q -Q .. quartz.test -Q ../../lang quartz.lang)
     (run python3 -c "import sys, re; s = sys.stdin.read(); m = re.search(r\\"=\\\\s*\\\\\\"(.*)\\\\\\\"(?:\\\\s*:\\\\s*string)?\\", s, re.DOTALL); sys.stdout.write(m.group(1).replace('\\\\\\\"\\\\\\\"', '\\\\\\\"') if m else s)")))))
 
@@ -74,7 +74,7 @@ def generate_rules_for_file(path):
  {"(alias test-cpp)" if cpp_reject else f"(target {test_name}.exe)"}
  (action
   (with-accepted-exit-codes {"(not 0)" if cpp_reject else "0"}
-   (run c++ -fsanitize=address,undefined -std=c++2b {test_name}.cpp {"-fsyntax-only" if cpp_reject else "-o %{target}"}))))
+   (run c++ -fsanitize=address,undefined -std=c++2b -fbracket-depth=1024 {test_name}.cpp {"-fsyntax-only" if cpp_reject else "-o %{target}"}))))
 """)
 
     if not cpp_reject:

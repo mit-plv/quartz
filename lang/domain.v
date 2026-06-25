@@ -18,13 +18,6 @@ Module Import Zmod.
   Proof. destruct (Zmod.in_elements b ltac:(inversion 1)); intuition subst; constructor. Qed.
 End Zmod.
 
-Module bits.
-  Definition hex {n : Z} (v : bits n) : string :=
-    NilZero.string_of_int (Z.to_int n) ++ "'h" ++
-    let s := HexString.of_Z (Zmod.unsigned v) in
-    String.substring 2 (String.length s - 2) s.
-End bits.
-
 Module Vector.
   Section WithA.
   Context {A : Type}.

@@ -3,22 +3,20 @@ From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof 
 From Stdlib Require Import BinInt Bits Vector String Ascii List DecimalString HexString.
 Import ListNotations.
 
-From quartz.lang Require Import ident_to_string let_lift Syntax transform.
+From quartz.lang Require Import ident_to_string Syntax transform pp.
 
 Module sv.
   Local Open Scope bool_scope. Local Open Scope string_scope.
-  Definition var (t : type) := string.
-  Definition fn (a b : type) := string.
-
-  Definition pp_Z (n : Z) : string := NilZero.string_of_int (Z.to_int n).
-  Definition pp_nat (n : nat) : string := NilZero.string_of_uint (Nat.to_uint n).
-  Definition LF := "
-".
-
+  Definition var := pp.var.
+  Definition fn := pp.fn.
+  Local Notation pp_Z := pp.Z.
+  Local Notation pp_nat := pp.nat.
+  Local Notation LF := pp.LF.
+  Local Notation isalpha := pp.isalpha.
+  Local Notation isdigit := pp.isdigit.
+  Local Notation topsort := pp.topsort.
+  Local Notation typeannots_fns := pp.typeannots_fns.
   Local Coercion Z_of_ascii (c : Ascii.ascii) : Z := Z.of_N (Ascii.N_of_ascii c).
-
-  Definition isalpha (c : Z) : bool := ((("A"%char <=? c)%Z && (c <=? "Z"%char)%Z) || (("a"%char <=? c)%Z && (c <=? "z"%char)%Z))%bool.
-  Definition isdigit (c : Z) : bool := (("0"%char <=? c)%Z && (c <=? "9"%char)%Z)%bool.
 
   Fixpoint valid_ident_tail (s : string) : bool :=
     match s with
@@ -86,7 +84,7 @@ Module sv.
     | type.Bits sz => "bit" ++ dims ++ "["++pp_Z (sz - 1)++":0]"
     | type.Pair a b => "Pair#("++pp_type' a ""++", "++pp_type' b ""++")::t" ++ dims
     | type.Either a b => "Either#("++pp_type' a ""++", "++pp_type' b ""++")::t" ++ dims
-    | type.Struct name _ => name ++ dims
+    | type.Struct name nts => pp.mangle_struct_name name nts ++ dims
     | type.Array t' sz => pp_type' t' (dims ++ "["++pp_nat sz++"-1:0]")
     end.
 
@@ -102,7 +100,7 @@ Module sv.
   Fixpoint pp_typedefs (ts : list type) : string :=
     match ts with
     | nil => ""
-    | type.Struct n nts :: ts => pp_typedef n nts ++ pp_typedefs ts
+    | type.Struct n nts :: ts => pp_typedef (pp.mangle_struct_name n nts) nts ++ pp_typedefs ts
     | _ :: ts => pp_typedefs ts
     end.
 
@@ -130,7 +128,7 @@ Module sv.
               (if match rest with nil => true | _ => false end then "" else ", ") ++
               rest_str
           end
-        in fun s => name++"'{ "++pp_struct_val nts s++" }"
+        in fun s => pp.mangle_struct_name name nts++"'{ "++pp_struct_val nts s++" }"
     | type.Array t' sz =>
         let fix pp_vec {n} (v : Vector.t (type.interp t') n) : string :=
           match v in Vector.t _ n return string with
@@ -266,83 +264,7 @@ Module sv.
     | fns.Ret fname argname fn_body => pp_fn fname argname fn_body
     end.
 
-  Definition type_set_add (t : type) (acc : list type) : list type :=
-    if existsb (type.type_beq t) acc then acc else t :: acc.
 
-  Fixpoint typeannots_type (t : type) (acc : list type) : list type :=
-    let acc' := type_set_add t acc in
-    match t with
-    | type.Pair a b | type.Either a b => typeannots_type b (typeannots_type a acc')
-    | type.Array t' _ => typeannots_type t' acc'
-    | type.Struct _ nts => fold_right (fun nt a => typeannots_type (snd nt) a) acc' nts
-    | _ => acc'
-    end.
-
-  Fixpoint typeannots_expr {t} (e : expr.expr var fn t) (acc : list type) : list type :=
-    match e with
-    | @expr.Const _ _ _ c => typeannots_type t acc
-    | expr.Var x => acc
-    | @expr.Get _ _ _ C r i => typeannots_type (typeWithHole.plug C t) (typeannots_expr i (typeannots_expr r acc))
-    | @expr.Unop _ _ _ _ op e1 =>
-        let acc := match op with
-                   | @unop.Left l r | @unop.Right l r => typeannots_type r (typeannots_type l acc)
-                   | _ => acc
-                   end in
-        typeannots_expr e1 acc
-    | @expr.Binop _ _ _ _ _ op e1 e2 =>
-        let acc := match op with
-                   | @binop.MkPair a b => typeannots_type b (typeannots_type a acc)
-                   | _ => acc
-                   end in
-        typeannots_expr e2 (typeannots_expr e1 acc)
-    | expr.If cond a b => typeannots_expr b (typeannots_expr a (typeannots_expr cond acc))
-    | @expr.Call _ _ _ _ _ e1 => typeannots_expr e1 acc
-    end.
-
-  Fixpoint typeannots_eexpr {t} (e : eexpr.eexpr var fn t) (acc : list type) : list type :=
-    match e with
-    | @eexpr.Ret _ _ _ exp => typeannots_expr exp acc
-    | @eexpr.Let _ _ _ tx a _ aC =>
-        typeannots_eexpr (aC "") (typeannots_expr a (typeannots_type tx acc))
-    | @eexpr.Bind _ _ _ tx a _ aC =>
-        typeannots_eexpr (aC "") (typeannots_eexpr a (typeannots_type tx acc))
-    | @eexpr.If _ _ _ cond a b =>
-        typeannots_eexpr b (typeannots_eexpr a (typeannots_expr cond acc))
-    | @eexpr.Case _ _ _ _ cond _ l r =>
-        typeannots_eexpr (r "") (typeannots_eexpr (l "") (typeannots_expr cond acc))
-    | @eexpr.Upd _ _ _ i _ es v =>
-        typeannots_expr v (typeannots_expr es (typeannots_expr i acc))
-    end.
-
-  Fixpoint typeannots_fns {a b} (fs : fns.fns var fn a b) (acc : list type) : list type :=
-    let acc := typeannots_type b (typeannots_type a acc) in
-    match fs with
-    | @fns.Let _ _ _ _ a' b' _ _ fn_body C =>
-        let acc := typeannots_type b' (typeannots_type a' acc) in
-        typeannots_fns (C "") (typeannots_eexpr (fn_body "") acc)
-    | fns.Ret _ _ fn_body =>
-        typeannots_eexpr (fn_body "") acc
-    end.
-
-  Fixpoint is_subterm (s t : type) : bool :=
-    type.type_beq s t ||
-    match t with
-    | type.Pair a b | type.Either a b => is_subterm s a || is_subterm s b
-    | type.Struct _ nts => fold_right (fun nt b => b || is_subterm s (snd nt)) false nts
-    | type.Array t _ => is_subterm s t
-    | _ => false
-    end.
-
-  Fixpoint insert_type (t : type) (l : list type) : list type :=
-    match l with
-    | nil => t :: nil
-    | h :: tail =>
-        if is_subterm t h
-        then t :: h :: tail
-        else h :: insert_type t tail
-    end.
-
-  Definition topsort := fold_right insert_type [].
 
   Local Open Scope string_scope.
 
