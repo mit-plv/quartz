@@ -457,13 +457,13 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
   Notation "x" := (x) (in custom quartz_eexpr at level 0, x global).
   Notation "'return' e" := (eexpr.Ret e)
     (in custom quartz_eexpr at level 200, e custom quartz_expr at level 200).
-  Notation "'let' x ':=' a 'in' b" := (eexpr.Let "Let" a (fun x => b))
+  Notation "'let' x ':=' a 'in' b" := (eexpr.Let (string_of_binder_name'' x) a (fun x => b))
     (in custom quartz_eexpr at level 200, x name, a custom quartz_expr at level 200, b custom quartz_eexpr at level 200, right associativity).
-  Notation "'let' x : t ':=' a 'in' b" := (eexpr.Let (tx:=t) "Let" a (fun x => b))
+  Notation "'let' x : t ':=' a 'in' b" := (eexpr.Let (tx:=t) (string_of_binder_name'' x) a (fun x => b))
     (in custom quartz_eexpr at level 200, x name, t constr at level 200, a custom quartz_expr at level 200, b custom quartz_eexpr at level 200, right associativity).
-  Notation "'let' x '<-' a 'in' b" := (eexpr.Bind "Bind" a (fun x => b))
+  Notation "'let' x '<-' a 'in' b" := (eexpr.Bind (string_of_binder_name'' x) a (fun x => b))
     (in custom quartz_eexpr at level 200, x name, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200, right associativity).
-  Notation "'let' x : t '<-' a 'in' b" := (eexpr.Bind (tx := t) "Bind" a (fun x => b))
+  Notation "'let' x : t '<-' a 'in' b" := (eexpr.Bind (tx := t) (string_of_binder_name'' x) a (fun x => b))
     (in custom quartz_eexpr at level 200, x name, t constr at level 200, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200, right associativity).
   Notation "'if' cond 'then' a 'else' b" := (eexpr.If cond a b)
     (in custom quartz_eexpr at level 200, cond custom quartz_expr at level 200, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200).

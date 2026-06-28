@@ -713,7 +713,11 @@ let fn2fns_fast bundle e env sigma =
         if is_fn_Fn_ctor h_curr && Array.length args_curr >= 3 then
           let (_, _, lam) = get_fn_args args_curr in
           let lam_clean = replace_fn d lam in
-          let fns_args = [| var_top; Vars.liftn d 1 target_fn; ta_top; tb_top; top_name_str; make_coq_string "x"; lam_clean |] in
+          let arg_name_str = match EConstr.kind sigma lam with
+            | Lambda (b_arg, _, _) -> (match b_arg.Context.binder_name with Name id -> make_coq_string (Id.to_string id) | Anonymous -> make_coq_string "x")
+            | _ -> make_coq_string "x"
+          in
+          let fns_args = [| var_top; Vars.liftn d 1 target_fn; ta_top; tb_top; top_name_str; arg_name_str; lam_clean |] in
           mkApp (c_fns_Ret, fns_args)
         else
           let r_fn_inner = Vars.liftn (d + 1) 1 target_fn in
