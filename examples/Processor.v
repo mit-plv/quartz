@@ -592,7 +592,6 @@ Module Decode. Section Decode.
   Let Csr12 {var} : fn var (Bits 32) (Bits 12) :=
       ExtractBits 20 .
 
-  (* Field extractors mirroring [griffin/isaSpec/IsaParams.v:getFields]. *)
   Let Rs1Idx {var} : fn var (Bits 32) (Bits 5) :=
     QStdlib.ExtractBits 15.
   Let Rs2Idx {var} : fn var (Bits 32) (Bits 5) :=
@@ -632,7 +631,6 @@ Module Decode. Section Decode.
   return (#s20 << (32 'd 12))
   )).
 
-  (* Bundles all raw instruction fields; mirrors [griffin/isaSpec/IsaParams.v:getFields]. *)
   Definition getFields {var} : fn var (Bits 32) DecodeFields := Fn (fun (inst: var mword) => quartz_eexpr:(
     let rs1Idx := Rs1Idx ( #inst ) in
     let rs2Idx := Rs2Idx ( #inst ) in
