@@ -22,3 +22,11 @@ Ltac2 constr_string_of_string (s : string) :=
 (* Ltac2 Eval constr_string_of_string "hello world". *)
 
 Ltac2 constr_string_of_ident (i : ident) := constr_string_of_string (Ident.to_string i).
+
+Notation string_of_binder_name'' x :=
+  (match Set return String.string with
+   | x => ltac2:(Control.refine (fun () =>
+            let (id, _, _) := List.last (Control.hyps ()) in
+            constr_string_of_string (Ident.to_string id)))
+   end) (only parsing).
+

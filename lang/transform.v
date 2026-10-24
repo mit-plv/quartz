@@ -22,10 +22,9 @@ Section Forall_forall.
 End Forall_forall.
 End List.
 
-From quartz.lang Require Import domain Syntax ident_to_string let_lift.
-From stdpp Require Import bitvector.definitions.
+From quartz.lang Require Import domain Syntax ident_to_string.
 
-Open Scope N_scope.
+Open Scope Z_scope.
 
 Import Syntax.type.
 Module Import type.
@@ -49,7 +48,7 @@ Module Import type.
   Fixpoint eq_dec (x y : type) : {x = y} + {x <> y}. Proof. refine
     match x, y with
     | Bits sz1, Bits sz2 =>
-      match N.eq_dec sz1 sz2 with
+      match Z.eq_dec sz1 sz2 with
       | left pf => left _
       | _ => right _
       end
@@ -87,43 +86,43 @@ Module Import type.
     all : try congruence.
   Qed.
 
-  Fixpoint size (t : type) : N :=
+  Fixpoint size (t : type) : Z :=
     match t with
     | Bits sz => sz
     | Pair a b => size b + size a
-    | Either a b => N.max (size a) (size b) + 1
-    | Struct _ nts => fold_right (fun nt acc => acc + size (snd nt))%N 0%N nts
-    | Array t n => Nat.iter n (N.add (size t)) 0%N
+    | Either a b => Z.max (size a) (size b) + 1
+    | Struct _ nts => fold_right (fun nt acc => acc + size (snd nt)) 0 nts
+    | Array t n => Nat.iter n (Z.add (size t)) 0
     end.
 
   Section WithPack.
     Context (pack : forall {t : type}, forall (v : t), bits (size t)).
     Fixpoint pack_struct (fs : list (string * type))
       : fold_right (fun nt T => type.interp (snd nt) * T)%type unit fs ->
-      bits (fold_right (fun nt acc => acc + size (snd nt)) 0 fs)%N :=
+      bits (fold_right (fun nt acc => acc + size (snd nt)) 0 fs) :=
       match fs
       return fold_right (fun nt T => type.interp (snd nt) * T)%type unit fs ->
              bits (fold_right (fun nt acc => acc + size (snd nt)) 0 fs)
-      with | nil => fun _ => bv_0 _
-      | p :: l => fun v => bv_concat _ (pack_struct l (snd v)) (@pack _ (fst v))
+      with | nil => fun _ => Zmod.zero
+      | p :: l => fun v => Zmod.app (pack_struct l (snd v)) (@pack _ (fst v))
       end.
     Context {t : type}.
-    Fixpoint pack_array n (v : Vector.t (type.interp t) n) : bits (Nat.iter n (N.add (size t)) 0) :=
+    Fixpoint pack_array n (v : Vector.t (type.interp t) n) : bits (Nat.iter n (Z.add (size t)) 0) :=
       match v in Vector.t _ n
-      return bits (Nat.iter n (N.add (size t)) 0)
-      with | Vector.nil => bv_0 _ 
-      | Vector.cons hd tl => bv_concat _ (@pack _ hd) (pack_array _ tl)
+      return bits (Nat.iter n (Z.add (size t)) 0)
+      with | Vector.nil _ => Zmod.zero
+      | Vector.cons _ hd _ tl => Zmod.app (@pack _ hd) (pack_array _ tl)
       end.
   End WithPack.
   Fixpoint pack {t : type} : forall (v : t), bits (size t) :=
     match t as t0 return t0 -> bits (size t0) with
     | Bits _ => fun v => v
-    | Pair a b => fun p => bv_concat _ (pack (snd p)) (pack (fst p))
+    | Pair a b => fun p => Zmod.app (pack (snd p)) (pack (fst p))
     | Either a b => fun e =>
-        let s := N.max (size a) (size b) in
+        let s := Z.max (size a) (size b) in
         match e with
-        | inl v => bv_concat _ (Z_to_bv s (bv_unsigned (pack v))) (bv_0 1)
-        | inr v => bv_concat _ (Z_to_bv s (bv_unsigned (pack v))) (Z_to_bv 1 1)
+        | inl v => Zmod.app (bits.of_Z s (Zmod.unsigned (pack v))) Zmod.zero
+        | inr v => Zmod.app (bits.of_Z s (Zmod.unsigned (pack v))) Zmod.one
         end
     | Struct name fields => pack_struct (@pack) fields
     | Array t' n => pack_array (@pack) n
@@ -180,78 +179,67 @@ Module expr.
   End rmap.
 
   Definition unapp0l {var fn t} (e : expr var fn t) : expr var fn t :=
-    match e with
+    match e in expr _ _ t0 return expr var fn t0 with
     | Binop op e1 e2 =>
         match op in binop.binop _ _ t return _ -> _ -> expr var fn t with
-        | (@binop.App sz n m) as op => fun e1 e2 =>
+        | (@binop.App n m) as op => fun e1 e2 =>
         if (n =? 0) && (0 <=? m) then Unop unop.UnsignedResize e2 else Binop op e1 e2
         | op' => fun e1 e2 => Binop op' e1 e2
         end%bool e1 e2
-    | _ => e
+    | x => x
     end.
   Lemma interp_unapp0l {t} e : interp (@unapp0l _ _ t e) = interp e.
   Proof.
     case e; trivial. destruct op; cbn [interp unapp0l]; trivial.
-    destruct n as [|p]; [|trivial].
-    cbn [N.eqb N.leb andb].
-    simpl.
-    intros. 
-    destruct m as [|p]; [|trivial]; simpl in *.
-    - apply (inj bv_unsigned).
-      rewrite bv_concat_unsigned', Z_to_bv_unsigned.
-      repeat rewrite bv_unsigned_N_0.  trivial.
-    - apply (inj bv_unsigned).
-      rewrite bv_concat_unsigned', Z_to_bv_unsigned.
-      repeat rewrite bv_unsigned_N_0. 
-      simpl. 
-      rewrite Z.shiftl_0_l, Z.lor_0_l; trivial.
+    case Z.eqb_spec; trivial.
+    case Z.leb_spec; trivial.
+    intros; subst; cbn [interp unop.interp binop.interp unop.UnsignedResize andb]; trivial.
+    rewrite (Zmod.hprop_Zmod_1 _ Zmod.zero).
+    apply Zmod.unsigned_inj.
+    rewrite Zmod.unsigned_of_Z, bits.unsigned_app by trivial using Z.le_refl.
+    rewrite Z.lor_0_l, Z.shiftl_0_r, Z.add_0_l, Zmod.mod_unsigned; trivial.
   Qed.
 
   Definition unapp0r {var fn t} (e : expr var fn t) : expr var fn t :=
-    match e with
+    match e in expr _ _ t0 return expr var fn t0 with
     | Binop op e1 e2 =>
         match op in binop.binop _ _ t return _ -> _ -> expr var fn t with
-        | (@binop.App sz n m) as op => fun e1 e2 =>
+        | (@binop.App n m) as op => fun e1 e2 =>
         if (m =? 0) && (0 <=? n) then Unop unop.UnsignedResize e1 else Binop op e1 e2
         | op' => fun e1 e2 => Binop op' e1 e2
         end%bool e1 e2
-    | _ => e
+    | x => x
     end.
   Lemma interp_unapp0r {t} e : interp (@unapp0r _ _ t e) = interp e.
   Proof.
     case e; trivial. destruct op; cbn [interp unapp0r]; trivial.
-    destruct m as [|p]; [|trivial].
-    cbn [N.eqb N.leb andb].
-    destruct n as [|p]; [|trivial]; intros; simpl in *.
-    - apply (inj bv_unsigned).
-      rewrite bv_concat_unsigned', Z_to_bv_unsigned.
-      repeat rewrite bv_unsigned_N_0.  trivial.
-    - apply (inj bv_unsigned).
-      rewrite bv_concat_unsigned', Z_to_bv_unsigned.
-      repeat rewrite bv_unsigned_N_0. 
-      rewrite Z.shiftl_0_r, Z.lor_0_r; trivial.
+    case Z.eqb_spec; trivial.
+    case Z.leb_spec; trivial.
+    intros; subst; cbn [interp unop.interp binop.interp unop.UnsignedResize andb]; trivial.
+    rewrite (Zmod.hprop_Zmod_1 _ Zmod.zero).
+    apply Zmod.unsigned_inj.
+    rewrite Zmod.unsigned_of_Z, bits.unsigned_app by trivial using Z.le_refl.
+    rewrite Z.add_0_r, Z.shiftl_0_l, Z.lor_0_r, Zmod.mod_unsigned; trivial.
   Qed.
 
   Definition unresizesame {var fn t} (e : expr var fn t) : expr var fn t :=
-    match e with
+    match e in expr _ _ t0 return expr var fn t0 with
       | Unop op e1 =>
         match op in unop.unop t1 t' return expr var fn t1 -> expr var fn t' with
         | @unop.Resize s n m => fun e1 =>
-            match N.eq_dec n m with
+            match Z.eq_dec n m with
             | left pf => eq_rect _ (fun T => expr var fn T) e1 _ (f_equal Bits pf)
             | right _ => Unop (@unop.Resize s n m) e1
             end
         | op' => fun e1 => Unop op' e1
         end e1
-      | _ => e
+      | x => x
     end.
   Lemma interp_unresizesame {t} e : interp (@unresizesame _ _ t e) = interp e.
   Proof.
     case e; trivial. destruct op; cbn [interp unresizesame]; trivial.
-    case N.eq_dec as []; subst; cbn [eq_rect f_equal unop.interp]; trivial.
-    intros; case signed;
-    [ symmetry; apply bv_eq_signed; rewrite Z_to_bv_signed; apply bv_swrap_bv_signed
-    | symmetry; apply Z_to_bv_bv_unsigned ].
+    case Z.eq_dec as []; subst; cbn [eq_rect f_equal unop.interp]; trivial.
+    intros; case signed; rewrite ?Zmod.of_Z_unsigned, ?Zmod.of_Z_signed; trivial.
   Qed.
 End expr.
 
@@ -286,7 +274,7 @@ Module eexpr.
     | x :: xs => f_equal (cons x) (app_assoc xs l2 l3)
     end.
 
-  Local Notation "e1 ++ e2" := (expr.Binop (binop.App _) e1 e2).
+  Local Notation "e1 ++ e2" := (expr.Binop binop.App e1 e2).
   Local Notation "'cast' e" := (expr.Unop unop.UnsignedResize e) (at level 0).
   Section PackStruct.
     Context (pack : forall {t}, type.wf t -> expr t -> eexpr (Bits (size t))).
@@ -297,7 +285,7 @@ Module eexpr.
       match r
       return type.struct_wf type.wf r l -> expr (Struct name (l ++ r)) ->
         eexpr (Bits (fold_right (fun nt acc => acc + size (snd nt)) 0 r))
-      with | nil => fun _ _ => Ret (expr.Const (t:=Bits 0) (Z_to_bv _ 0))
+      with | nil => fun _ _ => Ret (expr.Const (t:=Bits 0) Zmod.zero)
       | (n, t) :: fs' => fun pf e =>
         Bind "f_packed" (@pack t (proj1 (proj1 pf)) (Get (@typeWithHole.Struct name l n typeWithHole.HOLE fs' (proj2 (proj1 pf))) e expr.tt)) (fun p =>
         Bind "fs_packed" (pack_struct fs' (l ++ [(n, t)]) (proj2 pf) (eq_rect _ (fun f => expr (Struct name f)) e _ (eq_sym (app_assoc l [(n, t)] fs')))) (fun pr =>
@@ -307,13 +295,13 @@ Module eexpr.
   Section PackArray.
     Context {t : type} (pack : expr t -> eexpr (Bits (size t))) (n : nat) (e : expr (Array t n)).
     Fixpoint pack_array (r : nat)
-      : eexpr (Bits (Nat.iter r (N.add (size t)) 0)) :=
-      match r return eexpr (Bits (Nat.iter r (N.add (size t)) 0)) with
-      | O => Ret (@expr.Const _ _ (Bits 0) (Z_to_bv 0 0))
+      : eexpr (Bits (Nat.iter r (Z.add (size t)) 0)) :=
+      match r return eexpr (Bits (Nat.iter r (Z.add (size t)) 0)) with
+      | O => Ret (@expr.Const _ _ (Bits 0) Zmod.zero)
       | S r' =>
         let i := Z.of_nat (n-r)%nat in
-        let index_width := N.log2_up (N.of_nat n) in
-        Bind "elem_packed" (@pack (Get (typeWithHole.Array n typeWithHole.HOLE index_width) e (@Const _ _ (Pair (Bits index_width) Unit) (Z_to_bv index_width i, (bv_0 _))))) (fun pe =>
+        let index_width := Z.log2_up (Z.of_nat n) in
+        Bind "elem_packed" (@pack (Get (typeWithHole.Array n typeWithHole.HOLE index_width) e (@Const _ _ (Pair (Bits index_width) Unit) (bits.of_Z index_width i, Zmod.zero)))) (fun pe =>
         Bind "rest_packed" (pack_array r') (fun pr =>
         Ret (Var pe ++ Var pr)))
       end.
@@ -327,19 +315,14 @@ Module eexpr.
       Ret (Var pb ++ Var pa)))
     | Either l r => fun pf e => Case e
       (fun lv => Bind "l_packed" (pack (proj1 pf) (Var lv)) (fun pl =>
-        Ret ((Var pl) ++ @expr.Const _ _ (Bits 1) (Z_to_bv 1 0))))
+        Ret (cast (Var pl) ++ @expr.Const _ _ (Bits 1) Zmod.zero)))
       (fun rv => Bind "r_packed" (pack (proj2 pf) (Var rv)) (fun pr =>
-        Ret ((Var pr) ++ @expr.Const _ _ (Bits 1) (Z_to_bv 1 1))))
+        Ret (cast (Var pr) ++ @expr.Const _ _ (Bits 1) Zmod.one)))
     | Struct name fields => fun pf e => pack_struct (@pack) name fields [] pf e
     | Array t n => fun pf e => pack_array (@pack t pf) n e n
     end.
   End pack.
 
-
-  Lemma unsigned_resize_id sz (x: bits sz): bv_unsigned (Z_to_bv sz (bv_unsigned x)) = bv_unsigned x.
-  Proof.
-    rewrite Z_to_bv_unsigned, bv_wrap_bv_unsigned; trivial.
-  Qed.
 
   Lemma struct_types_wf r : forall l, struct_wf (@wf) r l -> Forall (fun nt => wf (snd nt)) r.
   Proof.
@@ -355,8 +338,8 @@ Module eexpr.
   Lemma size_nonneg : forall t, wf t -> 0 <= size t.
   Proof.
     induction t using type.type_ind; cbn; intros Hwf; try intuition lia.
-    (* { apply struct_types_wf in Hwf. induction (Forall_and Hwf H) as [|nt l X ?%Forall_and_inv]; cbn in *; intuition lia. } *)
-    (* { apply iter_nonneg; intuition lia. } *)
+    { apply struct_types_wf in Hwf. induction (Forall_and Hwf H) as [|nt l X ?%Forall_and_inv]; cbn in *; intuition lia. }
+    { apply iter_nonneg; intuition lia. }
   Qed.
 
   Lemma sum_size_nonneg r l : struct_wf wf r l ->
@@ -398,16 +381,16 @@ Module eexpr.
   Lemma interp_pack_struct (name : string) (r l : list (string * type)) {e pf}
     (pack : forall t, wf t -> expr type.interp interpfn t -> eexpr type.interp interpfn (Bits (size t)))
     (Hpack : Forall (fun st => forall pf e, interp (pack (snd st) pf e) = type.pack (expr.interp e)) r) :
-    bv_unsigned (interp (pack_struct pack name r l pf e)) =
-    bv_unsigned (type.pack_struct (@type.pack) r (struct.drop l r (expr.interp e))).
+    Zmod.unsigned (interp (pack_struct pack name r l pf e)) =
+    Zmod.unsigned (type.pack_struct (@type.pack) r (struct.drop l r (expr.interp e))).
   Proof.
     revert l e pf; induction Hpack as [| [n t] r Hpack ? IH]; [trivial |].
     cbn [pack_struct type.pack_struct eexpr.interp expr.interp unop.interp binop.interp
       struct.drop unop.UnsignedResize LetBlock fold_right fst snd struct_wf]; intros.
-    destruct pf as [[Hwf_t Hfield] Hwf_r]. 
-    rewrite bv_concat_unsigned by lia.
+    destruct pf as [[Hwf_t Hfield] Hwf_r].
+    rewrite bits.unsigned_app; [ | eapply sum_size_nonneg; eauto | apply size_nonneg; auto ].
     rewrite IH with (pf:=Hwf_r) by auto. rewrite Hpack.
-    rewrite bv_concat_unsigned by lia.
+    rewrite bits.unsigned_app; [ | eapply sum_size_nonneg; eauto | apply size_nonneg; auto ].
     rewrite expr_interp_eq_rect, <-snd_drop_cons_r.
     f_equal; f_equal; cbn [expr.interp typeWithHole.get]; f_equal; f_equal; erewrite <-fst_drop_cons_r; trivial.
   Qed.
@@ -424,8 +407,8 @@ Module eexpr.
     (pack : expr type.interp interpfn t -> eexpr type.interp interpfn (Bits (size t)))
     (Hpack : forall e, interp (pack e) = type.pack (expr.interp e))
     r i e :
-    bv_unsigned (interp (pack_array pack (i+r) e r)) =
-    bv_unsigned (type.pack_array (@type.pack) _ (Vector.unappr (expr.interp e))).
+    Zmod.unsigned (interp (pack_array pack (i+r) e r)) =
+    Zmod.unsigned (type.pack_array (@type.pack) _ (Vector.unappr (expr.interp e))).
   Proof.
     revert i e; induction r as [| r' IH]; intros.
     { generalize (Vector.unappr (expr.interp e)); eapply Vector.case0; trivial. }
@@ -436,19 +419,19 @@ Module eexpr.
     clearbody v. destruct (ltac:(lia) : S i + r' = i + S r')%nat.
     cbn [pack_array type.pack_array eexpr.interp expr.interp unop.interp unop.UnsignedResize binop.interp]. cbv[LetBlock].
     rewrite Hpack. cbn [pack_array type.pack_array eexpr.interp expr.interp unop.interp unop.UnsignedResize binop.interp].
-    rewrite bv_concat_unsigned at 1 by (cbn [Nat.iter]; reflexivity).
+    pose proof (size_nonneg _ twf).
+    assert (0 <= Nat.iter r' (Z.add (size t)) 0) by (apply iter_nonneg; intros; lia).
+    cbn [Nat.iter nat_rect] in *.
+    rewrite bits.unsigned_app; [|lia|lia].
     rewrite IH. cbn [typeWithHole.get fst].
     assert (S i + r' - S r' = i)%nat as -> by lia.
-    rewrite Z_to_bv_unsigned, bv_wrap_small.
-    2: { split; [apply Zle_0_nat|]; apply Z.lt_le_trans with (Z.of_nat (S i + r')) ;[ lia | unfold bv_modulus ].
-         pose proof (N.log2_log2_up_spec (N.of_nat (S i + r'))) as H'.
-         destruct H'; [lia |].
-         lia.
-       }
+    rewrite Zmod.unsigned_of_Z, Z.mod_small.
+    2: { split; [apply Zle_0_nat|]; apply Z.lt_le_trans with (Z.of_nat (S i + r')); [lia|].
+         apply Z.log2_log2_up_spec; lia. }
     rewrite Nat2Z.id.
     revert to_list_v; pattern v; refine (@Vector.caseS' t r' _ _ _); intros.
     cbn [type.pack_array].
-    rewrite bv_concat_unsigned by (cbn [Nat.iter]; reflexivity).
+    rewrite bits.unsigned_app; [|lia|lia].
     f_equal. f_equal.
     - f_equal. f_equal. setoid_rewrite (f_equal (List.hd (default t)) to_list_v).
       rewrite hd_skipn; trivial.
@@ -460,25 +443,10 @@ Module eexpr.
   Lemma interp_pack [t] [w : type.wf t] e : interp (pack w e) = type.pack (expr.interp e).
   Proof.
     induction t using type.type_ind; cbn [pack eexpr.interp expr.interp];
-      intros; apply bv_unsigned_inj.
+      intros; apply Zmod.unsigned_inj.
     { destruct (expr.interp e); trivial. }
-    { rewrite IHt1, IHt2 by (inversion w; auto); trivial. }
-    { destruct (expr.interp e); cbv[LetBlock]; rewrite ?IHt1, ?IHt2 by (inversion w; auto).
-      - simpl. 
-        repeat rewrite !bv_concat_unsigned', Z_to_bv_unsigned. 
-        rewrite @bv_0_unsigned.
-        replace (bv_wrap 1 0 : Z) with 0%Z by reflexivity.
-        rewrite !Z.lor_0_r. f_equal. symmetry.
-        rewrite Z_to_bv_unsigned.
-        pose proof (bv_unsigned_in_range _ (type.pack i)).
-        rewrite bv_wrap_small; auto.
-        split; [ lia | ].
-        apply Z.lt_le_trans with (bv_modulus (size t1)); [lia | apply bv_modulus_le_mono, N.le_max_l].
-      - simpl. rewrite !bv_concat_unsigned', Z_to_bv_unsigned. f_equal. f_equal. f_equal. symmetry.
-        apply bv_wrap_small.
-        pose proof (bv_unsigned_in_range _ (type.pack i)).
-        split; [lia | apply Z.lt_le_trans with (bv_modulus (size t2)); [lia | apply bv_modulus_le_mono, N.le_max_r]].
-    }
+    { cbv [LetBlock]; rewrite IHt1, IHt2 by (inversion w; auto); trivial. }
+    { destruct (expr.interp e); cbv [LetBlock]; rewrite ?IHt1, ?IHt2 by (inversion w; auto); trivial. }
     { setoid_rewrite interp_pack_struct; trivial. }
     { setoid_rewrite (interp_pack_array _ _ _ _ 0); trivial. }
   Qed.

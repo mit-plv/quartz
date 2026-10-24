@@ -1,4 +1,4 @@
-From stdpp Require Import bitvector.definitions.
+From Stdlib Require Import Bits.
 From Stdlib Require Import BinInt String List. Import ListNotations.
 Require Import quartz.lang.Syntax. Import type.
 Import (notations) type expr eexpr.
@@ -12,7 +12,7 @@ Definition hole_red := @typeWithHole.Struct "Pixel" [("valid", type.Bool)] "red"
 
 Definition test_invert_red2_inner {var} := @fn.Fn var type.Unit (type.reify'' Pixel) (fun _ =>
     quartz_eexpr:(
-      let p := const (rep_pixel (Build_Pixel (Z_to_bv _ 1%Z) (Z_to_bv _ 255%Z) (bv_0 _) (bv_0 _))) in
+      let p := const (rep_pixel (Build_Pixel (bits.of_Z _ 1%Z) (bits.of_Z _ 255%Z) Zmod.zero Zmod.zero)) in
       let cur_red := #p .[ hole_red , $expr.tt ] in
       let inv_red : Bits 8 := ~ #cur_red in
       let p_new <- #p .[ hole_red , $expr.tt ] = #inv_red in

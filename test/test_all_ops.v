@@ -1,5 +1,5 @@
+From Stdlib Require Import Bits.
 From Ltac2 Require Import Ltac2.
-From stdpp Require Import bitvector.definitions.
 From Stdlib Require Import BinInt.
 Require Import quartz.lang.Syntax. Import type.
 Import (notations) type expr eexpr.
@@ -27,22 +27,23 @@ Definition test_all_ops_inner {var} := @fn.Fn var type.Unit (type.reify'' AllOps
       let rec <- #rec .. r_not = (~ #a) in
       let rec <- #rec .. r_isz = (! #a) in
       let s := $(expr.Unop unop.UnsignedResize (expr.Var a)) in
+      let sh := $(expr.Unop unop.UnsignedResize (expr.Var s)) in
       let rec <- #rec .. r_ur  = #s in
       let rec <- #rec .. r_sr  = $(expr.Unop unop.SignedResize (expr.Var a)) in
       let rec <- #rec .. r_add = (#a + #b) in
       let rec <- #rec .. r_sub = (#a - #b) in
       let rec <- #rec .. r_and = (#a & #b) in
       let rec <- #rec .. r_or  = (#a | #b) in
-      let rec <- #rec .. r_slu = (#a << #b) in
-      let rec <- #rec .. r_sru = (#a >> #b) in
-      let rec <- #rec .. r_srs = (#a .>> #b) in
+      let rec <- #rec .. r_slu = (#a << #sh) in
+      let rec <- #rec .. r_sru = (#a >> #sh) in
+      let rec <- #rec .. r_srs = (#a .>> #sh) in
       let rec <- #rec .. r_mul_full  = $(expr.Binop (@binop.Mul 32 32 64) (expr.Var a) (expr.Var b)) in
       let rec <- #rec .. r_mul_same  = $(expr.Binop (@binop.Mul 32 32 32) (expr.Var a) (expr.Var b)) in
-      let m1 := $(expr.Const (t:=Bits 16) (Z_to_bv _ (-1)%Z)) in
+      let m1 := $(expr.Const (t:=Bits 16) (bits.of_Z _ (-1)%Z)) in
       let rec <- #rec .. r_mul_no_integer_promotion  = $(expr.Binop (@binop.Mul 16 16 32) (expr.Var m1) (expr.Var m1)) in
       let rec <- #rec .. r_mul_small_big  = $(expr.Binop (@binop.Mul 16 32 40) (expr.Var s) (expr.Var b)) in
       let rec <- #rec .. r_mul_big_small  = $(expr.Binop (@binop.Mul 32 16 40) (expr.Var a) (expr.Var s)) in
-      let rec <- #rec .. r_mul_trunc  = $(expr.Binop (@binop.Mul 32 16 8) (expr.Var a) (expr.Const (t:=Bits _) (Z_to_bv _ (-7)%Z))) in
+      let rec <- #rec .. r_mul_trunc  = $(expr.Binop (@binop.Mul 32 16 8) (expr.Var a) (expr.Const (t:=Bits _) (bits.of_Z _ (-7)%Z))) in
       let rec <- #rec .. r_eq  = (#a == #b) in
       let rec <- #rec .. r_lt  = (#a < #b) in
       let rec <- #rec .. r_gt  = (#a > #b) in

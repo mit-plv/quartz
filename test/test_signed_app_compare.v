@@ -1,14 +1,13 @@
-From stdpp Require Import bitvector.definitions.
 From Stdlib Require Import BinInt Bits String.
 Require Import quartz.lang.Syntax. Import type.
 Import (notations) type expr eexpr.
 
 Definition test_signed_app_compare_inner {var fn} (u : var type.Unit) : eexpr.eexpr var fn Bool :=
   quartz_eexpr:(
-    let a := $(expr.Const (t:=Bits 8) (Z_to_bv _ 255)) in
-    let b := $(expr.Const (t:=Bits 8) (Z_to_bv _ 255)) in
+    let a := $(expr.Const (t:=Bits 8) (bits.of_Z _ 255)) in
+    let b := $(expr.Const (t:=Bits 8) (bits.of_Z _ 255)) in
     let ab := (#a ++ #b) in
-    let zero := $(expr.Const (t:=Bits 16) (bv_0 _)) in
+    let zero := $(expr.Const (t:=Bits 16) Zmod.zero) in
     return (#ab .< #zero)
   ).
 

@@ -1,36 +1,34 @@
 #[export] Set Primitive Projections.
-From stdpp Require Import bitvector.definitions (* vector *).
 
 From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
 
 From quartz.lang Require Import domain Syntax. 
-From Stdlib Require Import BinInt.
+From Stdlib Require Import BinInt Bits.
 From Stdlib Require Import String List.
 From Stdlib Require NArith Vector.
 
-From quartz.lang Require Import ident_to_string let_lift.
+From quartz.lang Require Import ident_to_string.
 
 Module InterfaceExample.
 Import fn.
 Import type.
 
 
-Import (coercions) BV.
+Import (coercions) domain.Zmod.
 Module QStdlib.
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Definition ExtractBits {var} {n} (s: N) {l: N} : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
+  Definition ExtractBits {var} {n} (s: Z) {l: Z} : fn _ _ (Bits l) := Fn (fun b : var (Bits n) => quartz_eexpr:(
     return $(expr.Unop (unop.Slice s l) (expr.Var b)))).    
-  (* Concatenate bitvectors, matching [bv_concat sz hi lo] semantics.
+  (* Concatenate bitvectors ([hi] in the high bits).
      Result width is explicitly [sz] (typically [sz = hi_w + lo_w]).
    *)
-  Definition Concat {var} {sz : N} {hi_w lo_w : N}
+  Definition Concat {var} {sz : Z} {hi_w lo_w : Z}
     : fn _ (type.Pair (Bits hi_w) (Bits lo_w)) (Bits sz) :=
-    (* let lo_w' := Z.of_N lo_w in  *)
     Fn (fun (p : var (type.Pair (Bits hi_w) (Bits lo_w))) => quartz_eexpr:(
       let hi := #p .1 in
       let lo := #p .2 in
-      return $(expr.Binop (binop.App sz) (expr.Var hi) (expr.Var lo)))).
+      return $(expr.Unop unop.UnsignedResize (expr.Binop binop.App (expr.Var lo) (expr.Var hi))))).
 
   Declare Custom Entry quartz_struct_init.
 
@@ -86,17 +84,17 @@ Module fifo1. Section fifo1.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let full {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition full {var} := Fn (fun (st : var State) => quartz_eexpr:(
     return #st..valid)).
 
-  Let empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition empty {var} := Fn (fun (st : var State) => quartz_eexpr:(
     return ! #st..valid )).
 
-  Let first {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition first {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let out_d := #st..data in
     return (#out_d))).
 
-  Let enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
+  Definition enq {var} := Fn (fun (p : var (type.Pair State t)) => quartz_eexpr:(
     let st := #p .1 in let d  := #p .2 in
     let is_full := full ( #st ) (* #st..valid  *)in 
     if #is_full then
@@ -106,7 +104,7 @@ Module fifo1. Section fifo1.
       let st <- #st..data = #d in
       return #st)).
 
-  Let deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
+  Definition deq {var} := Fn (fun (st : var State) => quartz_eexpr:(
     let st_new <- #st..valid = false in
     return (#st_new))).
 
@@ -127,7 +125,7 @@ Module fifo1. Section fifo1.
   Proof. trivial. Qed.
 
   Lemma empty_ok (s : state) : fn.interp empty s = 
-                                 (bv_unsigned s.(valid) =? 0)%Z.
+                                 Zmod.eqb s.(valid) Zmod.zero.
   Proof. 
 trivial. Qed.
 
@@ -144,8 +142,7 @@ trivial. Qed.
     fn.interp empty st <> fn.interp full st.
   Proof.
     cbn. 
-    case (BV.bool_cases (valid st)); vm_compute bool_decide; 
-      cbv[bool_to_bv]; discriminate.
+    case (Zmod.bool_cases (valid st)); cbv; congruence.
   Qed.
 End fifo1. End fifo1.
 
@@ -153,7 +150,7 @@ End fifo1. End fifo1.
 
 Module Multiplier.
 
-  Record Multiplier {var} {width : N} {req: type} (t_state : type) := {
+  Record Multiplier {var} {width : Z} {req: type} (t_state : type) := {
     peek : fn var t_state (type.Bits (width + width));
     full : fn var t_state type.Bool;
     respReady : fn var t_state type.Bool;
@@ -166,8 +163,8 @@ End Multiplier. Notation Multiplier:= Multiplier.Multiplier (only parsing).
 
 Module multiplier. Section multiplier.
   (* Context {width : Z}. *)
-  Notation width := 32%N.
-  Context (logNSteps : N).
+  Notation width := 32%Z.
+  Context (logNSteps : Z).
 
   Record req_t := { input_a : Bits width; input_b : Bits width}.
   Definition Req := type.reify'' req_t.
@@ -252,7 +249,7 @@ End multiplier. End multiplier.
 
 Module RfScored. Section RfScored.
 Context {var: type -> Type}.
-Context {log_nregs: N}.
+Context {log_nregs: Z}.
 
 Notation t_idx := (Bits log_nregs).
   
@@ -266,24 +263,24 @@ Record RfScored {t_state t_data : type} := {
 End RfScored. End RfScored. Notation RfScored := RfScored.RfScored (only parsing).
 Module rfScored. 
   (* TODO: non-record type *)
-  Notation state' t_data nregs := (vector.vec (Bool * t_data) nregs).
+  Notation state' t_data nregs := (Vector.t (Bool * t_data) nregs).
   Section rfScored.
   Context {var: type -> Type}.
-  Context {log_nregs: N}.
+  Context {log_nregs: Z}.
   Context (t_data : type).
   Notation t_idx := (Bits log_nregs).
-  Definition nregs : nat := N.to_nat (2^log_nregs).
+  Definition nregs : nat := Z.to_nat (2^log_nregs).
   Notation state := (state' t_data nregs).
   Definition State := type.reify'' state.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
   (* TODO: let '(_,_) syntax *)
-  Let isLocked {var} : fn _ _ Bool := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+  Definition isLocked {var} : fn _ _ Bool := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 in 
     return #st[#idx] .1)).
 
-  Let read {var} : fn _ _ t_data := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+  Definition read {var} : fn _ _ t_data := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 in 
     if !#idx then
       return const (default t_data)
@@ -291,19 +288,19 @@ Module rfScored.
     return #st[#idx] .2)).
 
   (* TODO: #st[#idx].1 = true syntax *)
-  Let acquireLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+  Definition acquireLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 in 
     let data := #st[#idx] .2 in                        
     let st <- #st[#idx] = (true, #data) in
     return #st)).
 
-  Let releaseLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
+  Definition releaseLock {var} := Fn (fun (p : var (Pair State t_idx)) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 in 
     let data := #st[#idx] .2 in                        
     let st <- #st[#idx] = (false, #data) in
     return #st)).
 
-  Let writeAndRelease {var} := Fn (fun (p : var (Pair State (type.Pair t_idx t_data))) => quartz_eexpr:(
+  Definition writeAndRelease {var} := Fn (fun (p : var (Pair State (type.Pair t_idx t_data))) => quartz_eexpr:(
     let st := #p .1 in let idx := #p .2 .1 in let data := #p .2 .2 in
     if #st[#idx].1 then (* locked *)
       let st <- #st[#idx] = (false, #data) in
@@ -339,43 +336,43 @@ Module Bht.
 End Bht. Notation Bht := Bht.Bht (only parsing).
 
 Module bht. Section bht.
-  Notation histLen := 2%N.
-  Context {idxSz : N}.
-  Notation lenHist := (2%N).              
+  Notation histLen := 2%Z.
+  Context {idxSz: Z}.
+  Notation lenHist := (2%Z).              
   Context {var: type -> Type}.
-  Context {addrSz: N}.
+  Context {addrSz: Z}.
 
-  Definition nEntries : nat := N.to_nat (2^idxSz).
+  Definition nEntries : nat := Z.to_nat (2^idxSz).
 
   Notation state := (Vector.t (Bits histLen) nEntries).
   Definition State := type.reify'' state.
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+  Definition defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     return #pc + (_ 'd 4))).
 
-  Let getIndex {var} : fn _ _ (Bits idxSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+  Definition getIndex {var} : fn _ _ (Bits idxSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     let shift_amt : Bits addrSz := _ 'd 2 in 
     let shifted_pc := #pc >> #shift_amt in
     return $(expr.Unop unop.UnsignedResize (expr.Var shifted_pc)))).
 
-  Let computeTarget {var} : fn _ _ (Bits addrSz) := Fn (fun (args: var (Pair (Pair (Bits addrSz) (Bits addrSz)) Bool)) => quartz_eexpr:( 
+  Definition computeTarget {var} : fn _ _ (Bits addrSz) := Fn (fun (args: var (Pair (Pair (Bits addrSz) (Bits addrSz)) Bool)) => quartz_eexpr:( 
     let pc := #args .1 .1 in let targetPc := #args .1 .2 in let taken := #args .2 in
     return if #taken then #targetPc else defaultNextPc (#pc))).
 
-  Let extractDir {var} : fn _ _ Bool := Fn (fun (dp: var (Bits histLen)) => quartz_eexpr:(
+  Definition extractDir {var} : fn _ _ Bool := Fn (fun (dp: var (Bits histLen)) => quartz_eexpr:(
     return (#dp == _ 'd 3) | (#dp == _ 'd 2)
   )).
 
-  Let newDP {var} : fn _ _ (Bits histLen) := Fn (fun (p: var (Pair (Bits histLen) Bool)) => quartz_eexpr:(
+  Definition newDP {var} : fn _ _ (Bits histLen) := Fn (fun (p: var (Pair (Bits histLen) Bool)) => quartz_eexpr:(
     let dpBits := #p .1 in let taken := #p .2 in
     if #taken then
       return (if #dpBits == _ 'd 3 then #dpBits else #dpBits + _ 'd 1)
     else 
       return (if ! #dpBits then #dpBits else #dpBits - _ 'd 1)
- )).
+  )).
 
-  Let ppcDp {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
+  Definition ppcDp {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
     let st := #p .1 in let pc := #p .2 .1 in let targetPc := #p .2 .2 in
     let index := getIndex ( #pc ) in
     let entry := #st[#index] in
@@ -383,12 +380,12 @@ Module bht. Section bht.
     return computeTarget ( ((#pc, #targetPc), #direction) )
   )).
 
-  Let update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) Bool))) => quartz_eexpr:(
+  Definition update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) Bool))) => quartz_eexpr:(
      let st := #p .1 in let pc := #p .2 .1 in let taken := #p .2 .2 in
      let index := getIndex ( #pc ) in
      let entry := #st[#index] in
-     let dp' := newDP ( (#entry, #taken) ) in
-     let st <- #st[#index] = #dp' in
+     let dp_next := newDP ( (#entry, #taken) ) in
+     let st <- #st[#index] = #dp_next in
      return #st
   )).
 
@@ -411,11 +408,11 @@ Module Btb.
 End Btb. Notation Btb := Btb.Btb (only parsing).
 
 Module btb. Section btb.
-  Context {addrSz: N}.              
-  Context {tagSz: N}.              
-  Context {idxSz: N}.
+  Context {addrSz: Z}.              
+  Context {tagSz: Z}.              
+  Context {idxSz: Z}.
 
-  Definition nEntries : nat := N.to_nat (2^idxSz).
+  Definition nEntries : nat := Z.to_nat (2^idxSz).
              
   Record state := { targets: Vector.t (Bits addrSz) nEntries;
                     tags : Vector.t (Bits tagSz) nEntries;
@@ -425,15 +422,15 @@ Module btb. Section btb.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let getIndex {var} : fn _ _ (Bits idxSz) := 
+  Definition getIndex {var} : fn _ _ (Bits idxSz) := 
       @QStdlib.ExtractBits var addrSz 2 idxSz.  
-  Let getTag {var} : fn _ _ (Bits tagSz) := 
+  Definition getTag {var} : fn _ _ (Bits tagSz) := 
       @QStdlib.ExtractBits var addrSz ((addrSz - tagSz)) tagSz. 
 
-  Let defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
+  Definition defaultNextPc {var} : fn _ _ (Bits addrSz) := Fn (fun (pc : var (Bits addrSz)) => quartz_eexpr:(
     return #pc + (_ 'd 4))).
   Import QStdlib.
-  Let predPc {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Bits addrSz))) => quartz_eexpr:( 
+  Definition predPc {var} : fn _ _ (Bits addrSz) := Fn (fun (p: var (Pair State (Bits addrSz))) => quartz_eexpr:( 
     let st := #p .1 in let pc := #p .2 in 
     let index := getIndex (#pc) in
     let tag := getTag (#pc) in
@@ -446,19 +443,19 @@ Module btb. Section btb.
       return defaultNextPc (#pc)
   )).
 
-  Let update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
+  Definition update {var} : fn _ _ State := Fn (fun (p: var (Pair State (Pair (Bits addrSz) (Bits addrSz)))) => quartz_eexpr:(
     let st := #p .1 in let pc := #p .2 .1 in let nextPc := #p .2 .2 in
     let index := getIndex (#pc) in
     let tag := getTag (#pc) in
     let lookup_tag := #st..tags[#index] in
     if ~ (#nextPc == defaultNextPc (#pc)) then
       (* TODO: updating a submodule array *)
-      let valid' <- (#st..valid)[#index] = true in            
-      let targets' <- (#st..targets)[#index] = #nextPc in            
-      let tags' <- (#st..tags)[#index] = #tag in            
-      let st <- #st..valid = #valid' in
-      let st <- #st..targets = #targets' in
-      let st <- #st..tags = #tags' in
+      let valid_upd <- (#st..valid)[#index] = true in            
+      let targets_upd <- (#st..targets)[#index] = #nextPc in            
+      let tags_upd <- (#st..tags)[#index] = #tag in            
+      let st <- #st..valid = #valid_upd in
+      let st <- #st..targets = #targets_upd in
+      let st <- #st..tags = #tags_upd in
       return #st
     else
       return #st                                            
@@ -485,11 +482,11 @@ End CsrFile. Notation CsrFile := CsrFile.CsrFile (only parsing).
 Module csrFile. Section csrFile.
   Notation CsrIdx := (Bits 12) (only parsing).
   Notation mword := (Bits 32).
-  Definition CSR_mtvec : CsrIdx := Z_to_bv _ 773.
-  Definition CSR_mepc : CsrIdx := Z_to_bv _ 833.
-  Definition CSR_mcause : CsrIdx := Z_to_bv _ 834.
-  Definition CSR_mtval : CsrIdx := Z_to_bv _ 835.
-  Definition CSR_mie : CsrIdx := Z_to_bv _ 0x304. 
+  Definition CSR_mtvec : CsrIdx := bits.of_Z _ 773.
+  Definition CSR_mepc : CsrIdx := bits.of_Z _ 833.
+  Definition CSR_mcause : CsrIdx := bits.of_Z _ 834.
+  Definition CSR_mtval : CsrIdx := bits.of_Z _ 835.
+  Definition CSR_mie : CsrIdx := bits.of_Z _ 0x304. 
 
   Record state := { csr_mtvec : mword;
                     csr_mepc : mword;
@@ -501,7 +498,7 @@ Module csrFile. Section csrFile.
 
   Import (notations) eexpr expr. Local Open Scope string_scope.
 
-  Let readCsr {var} : fn _ _ mword := Fn (fun (p : var (Pair State CsrIdx)) => quartz_eexpr:(
+  Definition readCsr {var} : fn _ _ mword := Fn (fun (p : var (Pair State CsrIdx)) => quartz_eexpr:(
     let st := #p .1 in let csr := #p .2 in
     if #csr == const CSR_mtvec then return #st..csr_mtvec
     else if #csr == const CSR_mepc then return #st..csr_mepc
@@ -511,7 +508,7 @@ Module csrFile. Section csrFile.
     else return _ 'd 0
   )).
 
-  Let writeCsr {var} : fn _ _ State := Fn (fun (p : var (Pair State (Pair CsrIdx mword))) => quartz_eexpr:(
+  Definition writeCsr {var} : fn _ _ State := Fn (fun (p : var (Pair State (Pair CsrIdx mword))) => quartz_eexpr:(
     let st := #p .1 in let csr := #p .2 .1 in let val := #p .2 .2 in
     if #csr == const CSR_mtvec then
       let st <- #st..csr_mtvec = #val in return #st
@@ -543,20 +540,20 @@ Module Decode. Section Decode.
   Notation RegIdx := (Bits 5) (only parsing).
 
   Notation ImmType := (Bits 3) (only parsing).
-  Definition Imm_none : ImmType := Z_to_bv _ 0.
-  Definition Imm_I : ImmType    := Z_to_bv _ 1.
-  Definition Imm_S : ImmType    := Z_to_bv _ 2.
-  Definition Imm_B : ImmType    := Z_to_bv _ 3.
-  Definition Imm_U : ImmType    := Z_to_bv _ 4.
+  Definition Imm_none : ImmType := bits.of_Z _ 0.
+  Definition Imm_I : ImmType    := bits.of_Z _ 1.
+  Definition Imm_S : ImmType    := bits.of_Z _ 2.
+  Definition Imm_B : ImmType    := bits.of_Z _ 3.
+  Definition Imm_U : ImmType    := bits.of_Z _ 4.
 
   Notation InstType := (Bits 3) (only parsing).
-  Definition Inst_Illegal : InstType := Z_to_bv _ 0.
-  Definition Inst_Store : InstType   := Z_to_bv _ 1.
-  Definition Inst_Load : InstType    := Z_to_bv _ 2.
-  Definition Inst_Mul : InstType     := Z_to_bv _ 3.
-  Definition Inst_Alu : InstType     := Z_to_bv _ 4.
-  Definition Inst_Ctrl : InstType    := Z_to_bv _ 5.
-  Definition Inst_System : InstType  := Z_to_bv _ 6.
+  Definition Inst_Illegal : InstType := bits.of_Z _ 0.
+  Definition Inst_Store : InstType   := bits.of_Z _ 1.
+  Definition Inst_Load : InstType    := bits.of_Z _ 2.
+  Definition Inst_Mul : InstType     := bits.of_Z _ 3.
+  Definition Inst_Alu : InstType     := bits.of_Z _ 4.
+  Definition Inst_Ctrl : InstType    := bits.of_Z _ 5.
+  Definition Inst_System : InstType  := bits.of_Z _ 6.
 
   Record instrProps :=
   { rs1Valid : Bool;
@@ -662,33 +659,33 @@ Module Decode. Section Decode.
     return #ret
   )).
 
-  Definition opcode_LOAD : Bits 7 := Z_to_bv _ 3.
-  Definition opcode_OP_IMM : Bits 7 := Z_to_bv _ 19.
-  Definition opcode_AUIPC : Bits 7 := Z_to_bv _ 23.
-  Definition opcode_STORE : Bits 7 := Z_to_bv _ 35.
-  Definition opcode_OP : Bits 7 := Z_to_bv _ 51.
-  Definition opcode_BRANCH : Bits 7 := Z_to_bv _ 99.
-  Definition opcode_JALR : Bits 7 := Z_to_bv _ 103.
-  Definition opcode_SYSTEM : Bits 7 := Z_to_bv _ 115.
+  Definition opcode_LOAD : Bits 7 := bits.of_Z _ 3.
+  Definition opcode_OP_IMM : Bits 7 := bits.of_Z _ 19.
+  Definition opcode_AUIPC : Bits 7 := bits.of_Z _ 23.
+  Definition opcode_STORE : Bits 7 := bits.of_Z _ 35.
+  Definition opcode_OP : Bits 7 := bits.of_Z _ 51.
+  Definition opcode_BRANCH : Bits 7 := bits.of_Z _ 99.
+  Definition opcode_JALR : Bits 7 := bits.of_Z _ 103.
+  Definition opcode_SYSTEM : Bits 7 := bits.of_Z _ 115.
 
-  Definition funct3_LW : Bits 3 := Z_to_bv _ 2.
-  Definition funct3_ADDI : Bits 3 := Z_to_bv _ 0.
-  Definition funct3_SW : Bits 3 := Z_to_bv _ 2.
-  Definition funct3_ADD : Bits 3 := Z_to_bv _ 0.
-  Definition funct7_ADD : Bits 7 := Z_to_bv _ 0.
-  Definition funct3_MUL : Bits 3 := Z_to_bv _ 0.
-  Definition funct7_MUL : Bits 7 := Z_to_bv _ 1.
-  Definition funct3_BEQ : Bits 3 := Z_to_bv _ 0.
-  Definition funct3_JALR : Bits 3 := Z_to_bv _ 0.
-  Definition funct3_CSRRW : Bits 3 := Z_to_bv _ 1.
-  Definition funct3_XOR : Bits 3 := Z_to_bv _ 4.
-  Definition funct7_XOR : Bits 7 := Z_to_bv _ 0.
-  Definition funct3_SLLI : Bits 3 := Z_to_bv _ 1.
-  Definition funct7_SLLI : Bits 7 := Z_to_bv _ 0.
-  Definition funct3_SRLI : Bits 3 := Z_to_bv _ 5.
-  Definition funct7_SRLI : Bits 7 := Z_to_bv _ 0.
-  Definition funct3_BNE : Bits 3 := Z_to_bv _ 1.
-  Definition opcode_LUI : Bits 7 := Z_to_bv _ 55.
+  Definition funct3_LW : Bits 3 := bits.of_Z _ 2.
+  Definition funct3_ADDI : Bits 3 := bits.of_Z _ 0.
+  Definition funct3_SW : Bits 3 := bits.of_Z _ 2.
+  Definition funct3_ADD : Bits 3 := bits.of_Z _ 0.
+  Definition funct7_ADD : Bits 7 := bits.of_Z _ 0.
+  Definition funct3_MUL : Bits 3 := bits.of_Z _ 0.
+  Definition funct7_MUL : Bits 7 := bits.of_Z _ 1.
+  Definition funct3_BEQ : Bits 3 := bits.of_Z _ 0.
+  Definition funct3_JALR : Bits 3 := bits.of_Z _ 0.
+  Definition funct3_CSRRW : Bits 3 := bits.of_Z _ 1.
+  Definition funct3_XOR : Bits 3 := bits.of_Z _ 4.
+  Definition funct7_XOR : Bits 7 := bits.of_Z _ 0.
+  Definition funct3_SLLI : Bits 3 := bits.of_Z _ 1.
+  Definition funct7_SLLI : Bits 7 := bits.of_Z _ 0.
+  Definition funct3_SRLI : Bits 3 := bits.of_Z _ 5.
+  Definition funct7_SRLI : Bits 7 := bits.of_Z _ 0.
+  Definition funct3_BNE : Bits 3 := bits.of_Z _ 1.
+  Definition opcode_LUI : Bits 7 := bits.of_Z _ 55.
 
   Definition lookupCSR {var} : fn var _ Bool := Fn (fun (csr : var (Bits 12)) =>
     quartz_eexpr:(
@@ -912,10 +909,10 @@ Module Decode. Section Decode.
   Let is_word_aligned {var} : fn var _ Bool := Fn (fun (addr: var mword) => quartz_eexpr:(
     return (#addr & (_ 'd 3)) == _ 'd 0)).
 
-  Definition EXN_InstructionAddressMisaligned : mword := Z_to_bv _ 0.
-  Definition EXN_IllegalInstruction : mword := Z_to_bv _ 2.
-  Definition EXN_LoadAddressMisaligned : mword := Z_to_bv _ 4.
-  Definition EXN_StoreAddressMisaligned : mword := Z_to_bv _ 6.
+  Definition EXN_InstructionAddressMisaligned : mword := bits.of_Z _ 0.
+  Definition EXN_IllegalInstruction : mword := bits.of_Z _ 2.
+  Definition EXN_LoadAddressMisaligned : mword := bits.of_Z _ 4.
+  Definition EXN_StoreAddressMisaligned : mword := bits.of_Z _ 6.
 
   Record ctrlInput :=
   { ctrl_in_flds: DecodeFields;
@@ -1049,7 +1046,7 @@ Module CPU.
 End CPU. Notation Cpu := CPU.Cpu (only parsing).
 
 Module cpu. 
-  Notation width := 32%N.
+  Notation width := 32%Z.
   Notation mword := (Bits width).
   Section cpuTypes.
     Record mem_req_t := { mem_req_is_store : Bool; 
@@ -1100,14 +1097,14 @@ Module cpu.
     ltac2:(let t := struct.rep &v in exact $t).
 
   Section cpu.
-    Context {mul_LogNSteps: N}.
-    Context {bht_idxSz: N}.
-    Context {btb_tagSz: N}.
-    Context {btb_idxSz: N}.
+    Context {mul_LogNSteps: Z}.
+    Context {bht_idxSz: Z}.
+    Context {btb_tagSz: Z}.
+    Context {btb_idxSz: Z}.
     Context (isMMIOAddr : forall {var}, fn var mword Bool).
 
-    Definition log_nregs : N := 5.
-    Definition nregs : nat := N.to_nat (2^log_nregs).
+    Definition log_nregs : Z := 5.
+    Definition nregs : nat := Z.to_nat (2^log_nregs).
     Record state : Type :=
     { Pc : mword
     ; Epoch : Bool
@@ -1141,29 +1138,29 @@ Module cpu.
     Import QStdlib.
 
 
-    Notation fifo1_full := (Fifo.full _ _ (fifo1.impl _)).
-    Notation fifo1_empty := (Fifo.empty _ _ (fifo1.impl _)).
-    Notation fifo1_enq := (Fifo.enq _ _ (fifo1.impl _)).
-    Notation fifo1_first := (Fifo.first _ _ (fifo1.impl _)).
-    Notation fifo1_deq := (Fifo.deq _ _ (fifo1.impl _)).
-    Notation btb_update := (Btb.update _ (btb.impl)).  
-    Notation btb_predPc := (Btb.predPc _ (btb.impl)).  
-    Notation rf_isLocked := (RfScored.isLocked (rfScored.impl _ )).
-    Notation rf_read := (RfScored.read (rfScored.impl _)).
-    Notation rf_acquire := (RfScored.acquireLock (rfScored.impl _)).
-    Notation rf_release := (RfScored.releaseLock (rfScored.impl _)).
-    Notation rf_writeAndRelease := (RfScored.writeAndRelease (rfScored.impl _)).
+    Notation fifo1_full := (fifo1.full _).
+    Notation fifo1_empty := (fifo1.empty _).
+    Notation fifo1_enq := (fifo1.enq _).
+    Notation fifo1_first := (fifo1.first _).
+    Notation fifo1_deq := (fifo1.deq _).
+    Notation btb_update := btb.update.
+    Notation btb_predPc := btb.predPc.
+    Notation rf_isLocked := (rfScored.isLocked _).
+    Notation rf_read := (rfScored.read _).
+    Notation rf_acquire := (rfScored.acquireLock _).
+    Notation rf_release := (rfScored.releaseLock _).
+    Notation rf_writeAndRelease := (rfScored.writeAndRelease _).
 
-    Notation csr_read := (CsrFile.readCsr (csrFile.impl)).
-    Notation csr_write := (CsrFile.writeCsr (csrFile.impl)).
-    Notation bht_update := (Bht.update _ (bht.impl)).  
-    Notation bht_ppcDp := (Bht.ppcDp _ (bht.impl)).
-    Notation mul_full := (Multiplier.full _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_enq := (Multiplier.enq _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_tick := (Multiplier.tick _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_deq := (Multiplier.deq _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_peek := (Multiplier.peek _ (multiplier.impl mul_LogNSteps)).
-    Notation mul_ready := (Multiplier.respReady _ (multiplier.impl mul_LogNSteps)).
+    Notation csr_read := csrFile.readCsr.
+    Notation csr_write := csrFile.writeCsr.
+    Notation bht_update := bht.update.
+    Notation bht_ppcDp := bht.ppcDp.
+    Notation mul_full := (multiplier.full mul_LogNSteps).
+    Notation mul_enq := (multiplier.enq mul_LogNSteps).
+    Notation mul_tick := (multiplier.tick mul_LogNSteps).
+    Notation mul_deq := (multiplier.deq mul_LogNSteps).
+    Notation mul_peek := (multiplier.peek mul_LogNSteps).
+    Notation mul_ready := (multiplier.respReady mul_LogNSteps).
 
     Let struct_test {var} := Fn (fun (st : var State) => quartz_eexpr:(
         let pc := #st..Pc in 
@@ -1177,7 +1174,7 @@ Module cpu.
     Lemma struct_test_ok (st : state) :
       fn.interp struct_test st = {| mem_req_is_store := true; 
                                     mem_req_addr := st.(Pc);
-                                    mem_req_data := (Z_to_bv _ 0) |}.
+                                    mem_req_data := (bits.of_Z _ 0) |}.
     Proof.
       reflexivity.
     Qed.

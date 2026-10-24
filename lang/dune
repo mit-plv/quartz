@@ -1,5 +1,6 @@
 (coq.theory
  (package quartz)
  (name quartz.lang)
- (theories Stdlib Ltac2 stdpp)
+ (theories Stdlib Ltac2)
+ (plugins quartz.monomorphize_plugin)
  (flags (:standard -w -stdlib-vector -w -ambiguous-paths)))

@@ -1,61 +1,27 @@
 #[export] Set Primitive Projections.
-From Stdlib Require Import BinInt Eqdep.
+From Stdlib Require Import BinInt Bits Eqdep.
 From Stdlib Require Import String List HexString DecimalString.
 From Stdlib Require Vector.
 Import ListNotations.
-From stdpp Require Import bitvector.definitions.
 
-(* Module Import Zmod. *)
-(*   Coercion embed_bool (b : bool) : Zmod 2 := Zmod.of_Z _ (Z.b2z b). *)
-(*   Coercion nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero). *)
-(*   Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed. *)
-(*   Inductive Cases2 : Zmod 2 -> Prop := *)
-(*   | Cases2_0 : Cases2 (Zmod.mk 2 0 I) | Cases2_1 : Cases2 (Zmod.mk 2 1 I). *)
-(*   Lemma cases2 (x : Zmod 2) : Cases2 x. *)
-(*   Proof. destruct (Zmod.in_elements x ltac:(inversion 1)); intuition subst; constructor. Qed. *)
-(*   Inductive BoolCases : Zmod 2 -> Prop := *)
-(*   | BoolTrue : BoolCases true | BoolFalse : BoolCases false. *)
-(*   Lemma bool_cases (b : Zmod 2) : BoolCases b. *)
-(*   Proof. destruct (Zmod.in_elements b ltac:(inversion 1)); intuition subst; constructor. Qed. *)
-(* End Zmod. *)
-Module Import BV.
-  Coercion embed_bool (b : bool) : bv 1 := bool_to_bv _ b.
-  Coercion nonzero {m} (x : bv m) : bool := negb (bv_unsigned x =? 0)%Z.
+Module Import Zmod.
+  Coercion embed_bool (b : bool) : bits 1 := Zmod.of_Z _ (Z.b2z b).
+  Coercion nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero).
   Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed.
-  Inductive Cases2 : bv 1 -> Prop :=
-  | Cases2_0 : Cases2 (Z_to_bv _ 0) | Cases2_1 : Cases2 (Z_to_bv _ 1).
-  Lemma cases2 (x : bv 1) : Cases2 x.
-  Proof.
-    destruct (decide (x = Z_to_bv _ 0)) as [->|Hne].
-    - constructor.
-    - enough (x = Z_to_bv 1 1) as -> by constructor.
-      apply (proj2 (bv_eq _ _ _)).
-      assert (Hne' : bv_unsigned x ≠ 0%Z).
-      { intro He. apply Hne. apply (proj2 (bv_eq _ _ _)).
-        rewrite Z_to_bv_unsigned. exact He.
-        }
-      assert (Heq : bv_unsigned (Z_to_bv 1 1) = 1%Z) by
-        (apply Z_to_bv_small; unfold bv_modulus; simpl; lia).
-      rewrite Heq.
-      pose proof (bv_unsigned_in_range 1 x) as Hr.
-      unfold bv_modulus in Hr. simpl in Hr. lia.
-  Qed.
-  Inductive BoolCases : bv 1 -> Prop :=
+  Inductive Cases2 : bits 1 -> Prop :=
+  | Cases2_0 : Cases2 Zmod.zero | Cases2_1 : Cases2 Zmod.one.
+  Lemma cases2 (x : bits 1) : Cases2 x.
+  Proof. destruct (Zmod.in_elements x ltac:(inversion 1)); intuition subst; constructor. Qed.
+  Inductive BoolCases : bits 1 -> Prop :=
   | BoolTrue : BoolCases true | BoolFalse : BoolCases false.
-  Lemma bool_cases (b : bv 1) : BoolCases b.
-  Proof.
-    destruct (cases2 b).
-    - enough (embed_bool false = Z_to_bv _ 0) as H by (rewrite <- H; exact BoolFalse).
-      apply (proj2 (bv_eq _ _ _)).
-      vm_compute. reflexivity.
-    - exact BoolTrue.
-  Qed.
-End BV.
+  Lemma bool_cases (b : bits 1) : BoolCases b.
+  Proof. destruct (Zmod.in_elements b ltac:(inversion 1)); intuition subst; constructor. Qed.
+End Zmod.
 
 Module bits.
-  Definition hex {n : N} (v : bv n) : string :=
-    NilZero.string_of_int (N.to_int n) ++ "'h" ++
-    let s := HexString.of_Z (bv_unsigned v) in
+  Definition hex {n : Z} (v : bits n) : string :=
+    NilZero.string_of_int (Z.to_int n) ++ "'h" ++
+    let s := HexString.of_Z (Zmod.unsigned v) in
     String.substring 2 (String.length s - 2) s.
 End bits.
 
@@ -64,17 +30,17 @@ Module Vector.
   Context {A : Type}.
   Fixpoint upd {n} (xs : Vector.t A n) (i : nat) (f : A -> A) : Vector.t A n :=
     match xs in Vector.t _ n return Vector.t A n with
-    | Vector.nil => Vector.nil 
-    | Vector.cons x xs =>
+    | Vector.nil _ => Vector.nil _
+    | Vector.cons _ x _ xs =>
       match i with
-      | O => Vector.cons (f x) xs
-      | S i => Vector.cons x (upd xs  i f)
+      | O => Vector.cons _ (f x) _ xs
+      | S i => Vector.cons _ x _ (upd xs  i f)
       end
     end.
   Definition tl {n} (v : Vector.t A n) : Vector.t A (Nat.pred n) :=
     match v with
-    | Vector.nil => Vector.nil 
-    | Vector.cons a v => v
+    | Vector.nil _ => Vector.nil _
+    | Vector.cons _ a _ v => v
     end.
   Fixpoint unappr {i n} {struct i} : forall (v : Vector.t A (i+n)), Vector.t A n :=
     match i with

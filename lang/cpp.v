@@ -2,24 +2,20 @@
 From Ltac2 Require Import Ltac2 Array Constr Printf Proj Ind. Set Default Proof Mode "Classic". Module UConstr := Constr.Unsafe.
 From Stdlib Require Import BinInt Bits Vector String Ascii List DecimalString HexString NArith.
 Import ListNotations.
-From stdpp Require Import bitvector.definitions.
-From quartz.lang Require Import ident_to_string let_lift Syntax transform.
+From quartz.lang Require Import ident_to_string Syntax transform pp.
 
 Module cpp.
   Local Open Scope bool_scope. Local Open Scope string_scope.
-  Definition var (t : type) := string.
-  Definition fn (a b : type) := string.
-
-  Definition pp_Z (n : Z) : string := NilZero.string_of_int (Z.to_int n).
-  Definition pp_N (n : N) : string := NilZero.string_of_int (N.to_int n).
-
-  Definition pp_nat (n : nat) : string := NilZero.string_of_uint (Nat.to_uint n).
-  Definition LF := "
-".
-
+  Definition var := pp.var.
+  Definition fn := pp.fn.
+  Local Notation pp_Z := pp.Z.
+  Local Notation pp_nat := pp.nat.
+  Local Notation LF := pp.LF.
+  Local Notation isalpha := pp.isalpha.
+  Local Notation isdigit := pp.isdigit.
+  Local Notation topsort := pp.topsort.
+  Local Notation typeannots_fns := pp.typeannots_fns.
   Local Coercion Z_of_ascii (c : Ascii.ascii) : Z := Z.of_N (Ascii.N_of_ascii c).
-  Definition isalpha (c : Z) : bool := ((("A"%char <=? c)%Z && (c <=? "Z"%char)%Z) || (("a"%char <=? c)%Z && (c <=? "z"%char)%Z))%bool.
-  Definition isdigit (c : Z) : bool := (("0"%char <=? c)%Z && (c <=? "9"%char)%Z)%bool.
 
   Fixpoint valid_ident_tail (s : string) : bool :=
     match s with
@@ -50,12 +46,12 @@ Module cpp.
   Definition valid_type_shallow (t : type) : string :=
     match t with
     | type.Unit => ""
-    | type.Bits sz => if (sz <? 0)%N then "`error ""bitwidth must be nonnegative"" " else ""
+    | type.Bits sz => if (sz <? 0)%Z then "`error ""bitwidth must be nonnegative"" " else ""
     | type.Pair a b =>
-        if (type.size a <=? 0)%N || (type.size b <=? 0)%N then "`error ""pair component must have positive size"" " else ""
+        if (type.size a <=? 0)%Z || (type.size b <=? 0)%Z then "`error ""pair component must have positive size"" " else ""
     | type.Either a b =>
-        if (type.size a <=? 0)%N && (type.size b <=? 0)%N then "`error ""one Either side must have positive size"" " else ""
-    | type.Struct name _ => valid_ident name
+        if (type.size a <=? 0)%Z && (type.size b <=? 0)%Z then "`error ""one Either side must have positive size"" " else ""
+    | type.Struct name nts => valid_ident (pp.mangle_struct_name name nts)
     | type.Array t' sz => ""
     end.
 
@@ -63,10 +59,10 @@ Module cpp.
     valid_type_shallow t ++
     match t with
     | type.Unit => "unit"
-    | type.Bits sz => "unsigned _BitInt("++pp_N sz++")"
+    | type.Bits sz => "unsigned _BitInt("++pp_Z sz++")"
     | type.Pair a b => "std::pair<"++pp_type' a++", "++pp_type' b++">"
     | type.Either a b => "std::variant<"++pp_type' a++", "++pp_type' b++">"
-    | type.Struct name _ => name
+    | type.Struct name nts => pp.mangle_struct_name name nts
     | type.Array t sz => "std::array<"++pp_type' t++", "++pp_nat sz++">"
     end.
 
@@ -81,14 +77,14 @@ Module cpp.
   Fixpoint pp_typedefs (ts : list type) : string :=
     match ts with
     | nil => ""
-    | type.Struct n nts :: ts => pp_typedef n nts ++ pp_typedefs ts
+    | type.Struct n nts :: ts => pp_typedef (pp.mangle_struct_name n nts) nts ++ pp_typedefs ts
     | _ :: ts => pp_typedefs ts
     end.
 
   Fixpoint pp_const {t : type} : type.interp t -> string :=
     match t return type.interp t -> string with
     | type.Unit => fun b => "unit{}"
-    | type.Bits sz => fun v => "(unsigned _BitInt("++pp_N sz++"))"++pp_Z (bv_unsigned v)
+    | type.Bits sz => fun v => "(unsigned _BitInt("++pp_Z sz++"))"++pp_Z (Zmod.unsigned v)
     | type.Pair a b => fun p =>
         "std::make_pair("++@pp_const a (fst p)++", "++@pp_const b (snd p)++")"
     | type.Either a b => fun e =>
@@ -108,11 +104,11 @@ Module cpp.
               (if match rest with nil => true | _ => false end then "" else ", ") ++
               rest_str
           end
-        in fun s => name++"{ "++pp_struct_val nts s++" }"
+        in fun s => pp.mangle_struct_name name nts++"{ "++pp_struct_val nts s++" }"
     | type.Array t' sz =>
         let fix pp_vec {n} (v : Vector.t (type.interp t') n) : string :=
           match v in Vector.t _ n return string with
-          | Vector.nil => ""
+          | Vector.nil _ => ""
           | @Vector.cons _ hd 0 tl => @pp_const t' hd
           | @Vector.cons _ hd (S n') tl => @pp_const t' hd++", "++pp_vec tl
           end
@@ -130,38 +126,38 @@ Module cpp.
 
   Definition pp_unop {t1 t2} (op : unop t1 t2) (e1_str : string) : string :=
     match op with
-    | @unop.IsZero n => "(!"++e1_str++")"
-    | @unop.Not n => "(~"++e1_str++")"
-    | @unop.Opp n => "(-"++e1_str++")"
-    | @unop.Resize false n m => "((unsigned _BitInt("++pp_N m++"))("++e1_str++"))"
-    | @unop.Resize true n m => "((unsigned _BitInt("++pp_N m++"))((signed _BitInt("++pp_N n++"))("++e1_str++")))"
+    | @unop.IsZero n => "((unsigned _BitInt(1))(! "++e1_str++"))"
+    | @unop.Not n => "((unsigned _BitInt("++pp_Z n++"))(~ "++e1_str++"))"
+    | @unop.Opp n => "((unsigned _BitInt("++pp_Z n++"))(- "++e1_str++"))"
+    | @unop.Resize false n m => "((unsigned _BitInt("++pp_Z m++"))("++e1_str++"))"
+    | @unop.Resize true n m => "((unsigned _BitInt("++pp_Z m++"))((signed _BitInt("++pp_Z n++"))("++e1_str++")))"
     | @unop.Left l r => "std::variant<"++pp_type l++", "++pp_type r++">(std::in_place_index<0>, "++e1_str++")"
     | @unop.Right l r => "std::variant<"++pp_type l++", "++pp_type r++">(std::in_place_index<1>, "++e1_str++")"
-    | @unop.Slice _ s l => "((unsigned _BitInt("++pp_N l++"))(("++e1_str++") >> "++pp_N s++"))"
+    | @unop.Slice _ s l => "((unsigned _BitInt("++pp_Z l++"))(("++e1_str++") >> "++pp_Z s++"))"
     end.
 
   Definition pp_binop {t1 t2 t3} (op : binop t1 t2 t3) (e1_str e2_str : string) : string :=
     match op with
-    | @binop.Add n => "("++e1_str++" + "++e2_str++")"
-    | @binop.Sub n => "("++e1_str++" - "++e2_str++")"
-    | @binop.And n => "("++e1_str++" & "++e2_str++")"
-    | @binop.Or n => "("++e1_str++" | "++e2_str++")"
-    | @binop.Xor n => "("++e1_str++" ^ "++e2_str++")"
-    | @binop.Slu n => "slu<"++pp_N n++">("++e1_str++", "++e2_str++")"
-    | @binop.Sru n => "sru<"++pp_N n++">("++e1_str++", "++e2_str++")"
-    | @binop.Srs n => "srs<"++pp_N n++">("++e1_str++", "++e2_str++")"
-    | @binop.Mul n m z => "(unsigned _BitInt("++pp_N z++"))("++e1_str++" * (unsigned _BitInt("++pp_N (N.max m z)++"))"++e2_str++")"
-    | @binop.EqBits n => "("++e1_str++" == "++e2_str++")"
+    | @binop.Add n => "((unsigned _BitInt("++pp_Z n++"))("++e1_str++" + "++e2_str++"))"
+    | @binop.Sub n => "((unsigned _BitInt("++pp_Z n++"))("++e1_str++" - "++e2_str++"))"
+    | @binop.And n => "((unsigned _BitInt("++pp_Z n++"))("++e1_str++" & "++e2_str++"))"
+    | @binop.Or n => "((unsigned _BitInt("++pp_Z n++"))("++e1_str++" | "++e2_str++"))"
+    | @binop.Xor n => "((unsigned _BitInt("++pp_Z n++"))("++e1_str++" ^ "++e2_str++"))"
+    | @binop.Slu n => "slu<"++pp_Z n++">("++e1_str++", "++e2_str++")"
+    | @binop.Sru n => "sru<"++pp_Z n++">("++e1_str++", "++e2_str++")"
+    | @binop.Srs n => "srs<"++pp_Z n++">("++e1_str++", "++e2_str++")"
+    | @binop.Mul n m z => "((unsigned _BitInt("++pp_Z z++"))("++e1_str++" * (unsigned _BitInt("++pp_Z (Z.max m z)++"))"++e2_str++"))"
+    | @binop.EqBits n => "((unsigned _BitInt(1))("++e1_str++" == "++e2_str++"))"
     | @binop.Compare signed c n =>
         let op_str := match c with
           | binop.cLt => "<" | binop.cGt => ">"
           | binop.cLe => "<=" | binop.cGe => ">="
         end in
-        let e1_s := if signed then "((signed _BitInt("++pp_N n++"))"++e1_str++")" else e1_str in
-        let e2_s := if signed then "((signed _BitInt("++pp_N n++"))"++e2_str++")" else e2_str in
-        "("++e1_s++" "++op_str++" "++e2_s++")"
+        let e1_s := if signed then "((signed _BitInt("++pp_Z n++"))"++e1_str++")" else e1_str in
+        let e2_s := if signed then "((signed _BitInt("++pp_Z n++"))"++e2_str++")" else e2_str in
+        "((unsigned _BitInt(1))("++e1_s++" "++op_str++" "++e2_s++"))"
     | @binop.MkPair a b => "std::make_pair("++e1_str++", "++e2_str++")"
-    | @binop.App sz n m => "((unsigned _BitInt("++pp_N sz++"))(((unsigned _BitInt("++pp_N (n+m)++"))"++e2_str++" << "++pp_N n++") | (unsigned _BitInt("++pp_N (n+m)++"))"++e1_str++"))"
+    | @binop.App n m => "((unsigned _BitInt("++pp_Z (n+m)++"))(((unsigned _BitInt("++pp_Z (n+m)++"))"++e2_str++") << "++pp_Z n++") | "++e1_str++")"
     end.
 
   Fixpoint pp_expr {t} (e : expr.expr var fn t) : string :=
@@ -180,12 +176,12 @@ Module cpp.
     | @eexpr.Ret _ _ _ exp => (ind ++ out_var ++ " = " ++ pp_expr exp ++ ";", id)
     | @eexpr.Let _ _ name_hint tx a _ aC =>
         let vname := name_hint ++ "_" ++ pp_nat id in
-        let stmt1 := ind ++ "const auto " ++ vname ++ " = " ++ pp_expr a ++ ";" in
+        let stmt1 := ind ++ valid_ident name_hint ++ "const auto " ++ vname ++ " = " ++ pp_expr a ++ ";" in
         let '(stmt2, id') := pp_eexpr ind (aC vname) out_var (S id) in
         (stmt1 ++ ""++LF ++ stmt2, id')
     | @eexpr.Bind _ _ name_hint tx a _ aC =>
         let vname := name_hint ++ "_" ++ pp_nat id in
-        let stmt_decl := ind ++ "{ " ++ pp_type tx ++ " " ++ vname ++ ";" in
+        let stmt_decl := ind ++ valid_ident name_hint ++ "{ " ++ pp_type tx ++ " " ++ vname ++ ";" in
         let '(stmt1, id1) := pp_eexpr ind a vname (S id) in
         let '(stmt2, id2) := pp_eexpr ind (aC vname) out_var id1 in
         (stmt_decl ++ ""++LF ++ stmt1 ++ ""++LF ++ stmt2 ++ " }", id2)
@@ -230,83 +226,8 @@ Module cpp.
     | fns.Ret fname argname fn_body => pp_fn fname argname fn_body
     end.
 
-  Definition type_set_add (t : type) (acc : list type) : list type :=
-    if existsb (type.type_beq t) acc then acc else t :: acc.
 
-  Fixpoint typeannots_type (t : type) (acc : list type) : list type :=
-    let acc' := type_set_add t acc in
-    match t with
-    | type.Pair a b | type.Either a b => typeannots_type b (typeannots_type a acc')
-    | type.Array t' _ => typeannots_type t' acc'
-    | type.Struct _ nts => fold_right (fun nt a => typeannots_type (snd nt) a) acc' nts
-    | _ => acc'
-    end.
 
-  Fixpoint typeannots_expr {t} (e : expr.expr var fn t) (acc : list type) : list type :=
-    match e with
-    | @expr.Const _ _ _ c => typeannots_type t acc
-    | expr.Var x => acc
-    | @expr.Get _ _ _ C r i => typeannots_type (typeWithHole.plug C t) (typeannots_expr i (typeannots_expr r acc))
-    | @expr.Unop _ _ _ _ op e1 =>
-        let acc := match op with
-                   | @unop.Left l r | @unop.Right l r => typeannots_type r (typeannots_type l acc)
-                   | _ => acc
-                   end in
-        typeannots_expr e1 acc
-    | @expr.Binop _ _ _ _ _ op e1 e2 =>
-        let acc := match op with
-                   | @binop.MkPair a b => typeannots_type b (typeannots_type a acc)
-                   | _ => acc
-                   end in
-        typeannots_expr e2 (typeannots_expr e1 acc)
-    | expr.If cond a b => typeannots_expr b (typeannots_expr a (typeannots_expr cond acc))
-    | @expr.Call _ _ _ _ _ e1 => typeannots_expr e1 acc
-    end.
-
-  Fixpoint typeannots_eexpr {t} (e : eexpr.eexpr var fn t) (acc : list type) : list type :=
-    match e with
-    | @eexpr.Ret _ _ _ exp => typeannots_expr exp acc
-    | @eexpr.Let _ _ _ tx a _ aC =>
-        typeannots_eexpr (aC "") (typeannots_expr a (typeannots_type tx acc))
-    | @eexpr.Bind _ _ _ tx a _ aC =>
-        typeannots_eexpr (aC "") (typeannots_eexpr a (typeannots_type tx acc))
-    | @eexpr.If _ _ _ cond a b =>
-        typeannots_eexpr b (typeannots_eexpr a (typeannots_expr cond acc))
-    | @eexpr.Case _ _ _ _ cond _ l r =>
-        typeannots_eexpr (r "") (typeannots_eexpr (l "") (typeannots_expr cond acc))
-    | @eexpr.Upd _ _ _ i _ es v =>
-        typeannots_expr v (typeannots_expr es (typeannots_expr i acc))
-    end.
-
-  Fixpoint typeannots_fns {a b} (fs : fns.fns var fn a b) (acc : list type) : list type :=
-    let acc := typeannots_type b (typeannots_type a acc) in
-    match fs with
-    | @fns.Let _ _ _ _ a' b' _ _ fn_body C =>
-        let acc := typeannots_type b' (typeannots_type a' acc) in
-        typeannots_fns (C "") (typeannots_eexpr (fn_body "") acc)
-    | fns.Ret _ _ fn_body =>
-        typeannots_eexpr (fn_body "") acc
-    end.
-
-  Fixpoint is_subterm (s t : type) : bool :=
-    type.type_beq s t ||
-    match t with
-    | type.Pair a b | type.Either a b => is_subterm s a || is_subterm s b
-    | type.Struct _ nts => fold_right (fun nt b => b || is_subterm s (snd nt)) false nts
-    | type.Array t _ => is_subterm s t
-    | _ => false
-    end.
-
-  Fixpoint insert_type (t : type) (l : list type) : list type :=
-    match l with
-    | nil => t :: nil
-    | h :: tail =>
-        if is_subterm t h
-        then t :: h :: tail
-        else h :: insert_type t tail
-    end.
-
-  Definition topsort := fold_right insert_type [].
 
   Local Open Scope string_scope.
 
