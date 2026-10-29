@@ -37,33 +37,30 @@ def generate_rules_for_file(path):
 
 (rule
  (target {test_name}.out)
- (deps ../../lang/transform.vo {src_path}.vo ../../lang/pp.vo{deps_extra})
+ (deps ../../lang/transform.vo {src_path}.vo ../../lang/pp.vo{deps_extra} ../coqtop-last-Computed-string.sh)
  (action
   (with-stdout-to %{{target}}
    (pipe-stdout
-    (echo "Require Import quartz.lang.pp quartz.lang.Syntax quartz.lang.transform quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nEval vm_compute in pp.bits (type.pack (fns.interp {test_name} (type.default _))).\\n")
-    (run coqtop -q {coq_flags})
-    (run python3 -c "import sys, re; s = sys.stdin.read(); m = re.search(r\\"=\\\\s*\\\\\\"(.*)\\\\\\\"(?:\\\\s*:\\\\s*string)?\\", s, re.DOTALL); sys.stdout.write((m.group(1).replace('\\\\\\\"\\\\\\\"', '\\\\\\\"') + chr(10)) if m else s)")))))
+    (echo "Require Import quartz.lang.pp quartz.lang.Syntax quartz.lang.transform quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute pp.bits (type.pack (fns.interp {test_name} (type.default _))).\\n")
+    (run ../coqtop-last-Computed-string.sh -q -quiet {coq_flags})))))
 
 (rule
  (target {test_name}.sv)
- (deps ../../lang/sv.vo {src_path}.vo{deps_extra})
+ (deps ../../lang/sv.vo {src_path}.vo{deps_extra} ../coqtop-last-Computed-string.sh)
  (action
   (with-stdout-to %{{target}}
    (pipe-stdout
-    (echo "Require Import quartz.lang.Syntax quartz.lang.sv quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nEval vm_compute in sv.pp {test_name}.\\n")
-    (run coqtop -q {coq_flags})
-    (run python3 -c "import sys, re; s = sys.stdin.read(); m = re.search(r\\"=\\\\s*\\\\\\"(.*)\\\\\\\"(?:\\\\s*:\\\\s*string)?\\", s, re.DOTALL); sys.stdout.write((m.group(1).replace('\\\\\\\"\\\\\\\"', '\\\\\\\"') + chr(10)) if m else s)")))))
+    (echo "Require Import quartz.lang.Syntax quartz.lang.sv quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute sv.pp {test_name}.\\n")
+    (run ../coqtop-last-Computed-string.sh -q -quiet {coq_flags})))))
 
 (rule
  (target {test_name}.cpp)
- (deps ../../lang/cpp.vo {src_path}.vo{deps_extra})
+ (deps ../../lang/cpp.vo {src_path}.vo{deps_extra} ../coqtop-last-Computed-string.sh)
  (action
   (with-stdout-to %{{target}}
    (pipe-stdout
-    (echo "Require Import quartz.lang.Syntax quartz.lang.cpp quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nEval vm_compute in cpp.pp_test_driver (ltac:(repeat (constructor || cbn || discriminate))) {test_name}.\\n")
-    (run coqtop -q {coq_flags})
-    (run python3 -c "import sys, re; s = sys.stdin.read(); m = re.search(r\\"=\\\\s*\\\\\\"(.*)\\\\\\\"(?:\\\\s*:\\\\s*string)?\\", s, re.DOTALL); sys.stdout.write(m.group(1).replace('\\\\\\\"\\\\\\\"', '\\\\\\\"') if m else s)")))))
+    (echo "Require Import quartz.lang.Syntax quartz.lang.cpp quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute cpp.pp_test_driver (ltac:(repeat (constructor || cbn || discriminate))) {test_name}.\\n")
+    (run ../coqtop-last-Computed-string.sh -q -quiet {coq_flags})))))
 
 (rule
  (deps ../../slang/build/bin/slang {test_name}.sv)""")
