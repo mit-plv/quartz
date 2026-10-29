@@ -19,17 +19,18 @@ index 51db4a7fc..3a546c050 100644
  #include "slang/syntax/CSTSerializer.h"
  #include "slang/syntax/SyntaxTree.h"
  #include "slang/text/Json.h"
-@@ -177,6 +181,7 @@ int driverMain(int argc, TArgs argv) {
+@@ -178,7 +182,8 @@ int driverMain(int argc, TArgs argv) {
          std::optional<bool> onlyMacros;
          std::optional<bool> disableAnalysis;
          std::optional<bool> groupMacrosByFile;
 +        std::optional<std::string> evalExpr;
+         driver.cmdLine.setGroup("Actions");
          driver.cmdLine.add("-E,--preprocess", onlyPreprocess,
                             "Only run the preprocessor (and print preprocessed files to stdout)");
          driver.cmdLine.add("--macros-only", onlyMacros, "Print a list of found macros and exit");
 @@ -188,6 +193,8 @@ int driverMain(int argc, TArgs argv) {
          driver.cmdLine.add("--disable-analysis", disableAnalysis,
-                            "Disables post-elaboration analysis passes,"
+                            "Disables post-elaboration analysis passes, "
                             "which prevents some diagnostics from being issued");
 +        driver.cmdLine.add("--eval", evalExpr,
 +                           "Evaluate the given expression and print the result", "<expression>");
