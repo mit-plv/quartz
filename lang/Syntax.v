@@ -535,9 +535,6 @@ Module fns. (* deeply embedded environments of functions *)
     (ltac2:(
        let var := pretype var in
        let fn := pretype fn in
-       let hyps := Control.hyps () in
-       Message.print (Message.of_string "--- Ltac2 Env Hyps ---");
-       List.iter (fun (id, _, _) => Message.print (Message.of_ident id)) hyps;
        let f := pretype f in
        let rec get_head c := match Unsafe.kind c with
          | Unsafe.App h _ => get_head h
@@ -551,10 +548,10 @@ Module fns. (* deeply embedded environments of functions *)
          | _ => "main"
          end in
        let f_app := constr:($f $var) in
-       let f_mono := Control.time (Some "rmonomorphize_fast") (fun () => rmonomorphize_fast f_app) in
+       let f_mono := rmonomorphize_fast f_app in
        let top_name_str := constr_string_of_string top_name in
        let bundle := Constr.Unsafe.make (Constr.Unsafe.App var [| fn; '(@fns.Let); '(@fns.Ret); 'Datatypes.true; 'Datatypes.false; 'Ascii.Ascii; 'String.String; 'String.EmptyString; top_name_str; '(@expr.Var); '(@expr.Call); '(@eexpr.Ret) |]) in
-       let res := Control.time (Some "phase3_fn2fns_fast") (fun () => fn2fns_fast bundle f_mono) in
+       let res := fn2fns_fast bundle f_mono in
        exact ($res : fns $var $fn _ _)
     )) (only parsing).
 End fns.

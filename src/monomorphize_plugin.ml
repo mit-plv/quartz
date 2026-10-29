@@ -625,12 +625,6 @@ let fn2fns_fast bundle e env sigma =
         let cond2 = is_var_fn head_term in
         let cond3 = EConstr.isRel sigma head_term && Array.length args_full >= 2 && is_target_fn_fn in
         if cond1 || cond2 || cond3 then
-          let _ = Feedback.msg_notice Pp.(str "--- replace_fn matched ---") in
-          let _ = Feedback.msg_notice Pp.(str "  c: " ++ Printer.pr_econstr_env env sigma c) in
-          let _ = Feedback.msg_notice Pp.(str "  h: " ++ Printer.pr_econstr_env env sigma head_term) in
-          let _ = Feedback.msg_notice Pp.(str "  cond1 (is_fn_ind): " ++ str (string_of_bool cond1)) in
-          let _ = Feedback.msg_notice Pp.(str "  cond2 (is_var_fn): " ++ str (string_of_bool cond2)) in
-          let _ = Feedback.msg_notice Pp.(str "  cond3 (is_rel_len2_targetfn): " ++ str (string_of_bool cond3)) in
           let norm_h = Vars.liftn d 1 target_fn in
           let tail_clean = Array.map (replace_fn d) args_full in
           let len = Array.length tail_clean in
