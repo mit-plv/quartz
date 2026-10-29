@@ -84,7 +84,7 @@ def generate_rules_for_file(path):
  {f"(alias test-cpp)" if cpp_reject else f"(target {test_name}.exe)"}
  (action
   (with-accepted-exit-codes {f"(not 0)" if cpp_reject else f"0"}
-   (run c++ -fsanitize=address,undefined -std=c++2b -fbracket-depth=1024 {test_name}.cpp {f"-fsyntax-only" if cpp_reject else f"-o %{{target}}"}))))
+   (run clang++ -fsanitize=address,undefined -std=c++2b -fbracket-depth=1024 {test_name}.cpp {f"-fsyntax-only" if cpp_reject else f"-o %{{target}}"}))))
 """)
 
     if not cpp_reject:
