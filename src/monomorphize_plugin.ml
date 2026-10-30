@@ -404,7 +404,7 @@ let get_fn_args a =
 let rec normalize_val env sigma c =
   let (h, args) = EConstr.decompose_app sigma c in
   match EConstr.kind sigma h with
-  | Const (cst, u) -> (
+  | Const (cst, _u) -> (
       try
         let cb = Environ.lookup_constant cst env in
         match cb.Declarations.const_body with

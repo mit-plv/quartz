@@ -1,4 +1,4 @@
-(coq.theory
+(rocq.theory
  (package quartz)
  (name quartz.lang)
  (theories Stdlib Ltac2)

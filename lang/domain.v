@@ -6,7 +6,7 @@ Import ListNotations.
 
 Module Import Zmod.
   Coercion embed_bool (b : bool) : bits 1 := Zmod.of_Z _ (Z.b2z b).
-  Coercion nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero).
+  Definition nonzero {m} (x : Zmod m) : bool := negb (Zmod.eqb x Zmod.zero).
   Lemma nonzero_bool (b : bool) : nonzero b = b :> bool. Proof. case b; trivial. Qed.
   Inductive Cases2 : bits 1 -> Prop :=
   | Cases2_0 : Cases2 Zmod.zero | Cases2_1 : Cases2 Zmod.one.

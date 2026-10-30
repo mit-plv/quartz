@@ -38,4 +38,3 @@ Definition test_let_record_inner {var} := @fn.Fn var _ _ (fun x => quartz_eexpr:
 
 Definition test_let_record {var f} : fns.fns var f (Bits 8) (Bits 8) :=
   fns.package_global_fns'' var f (@test_let_record_inner).
-Print test_let_record.

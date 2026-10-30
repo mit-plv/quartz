@@ -22,6 +22,6 @@ Proof. rewrite interp_cycle, <-Zmod.add_assoc, (Zmod.of_Z_opp 1), Zmod.add_0_r; 
 
 Definition test_global_polyfn_inner := @cycle.
 Definition test_global_polyfn {var fn} := fns.package_global_fns'' var fn (@test_global_polyfn_inner).
-Require Import Coq.Logic.FunctionalExtensionality.
+From Stdlib Require Import Logic.FunctionalExtensionality.
 Lemma interp_reified : fns.interp test_global_polyfn = interp cycle. Proof. reflexivity. Qed.
 

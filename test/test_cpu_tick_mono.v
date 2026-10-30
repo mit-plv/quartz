@@ -14,6 +14,6 @@ Definition test_cpu_tick_mono :=
 Theorem test_cpu_tick_mono_correct : @test_cpu_tick_mono = @cpu.tick mul_LogNSteps bht_idxSz btb_tagSz btb_idxSz (@isMMIOAddr) var.
 Proof.
   exact_no_check (eq_refl (@test_cpu_tick_mono)).
-Time Qed.
+Qed.
 
 End __.

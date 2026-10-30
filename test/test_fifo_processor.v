@@ -32,9 +32,6 @@ Definition test_fifo_processor_inner {var : type -> Type} := @fn.Fn var _ _ (fun
   return (#is_empty, #is_full, #first_val, #st_enqed, #st_deqed)
 )).
 
-Print test_fifo_processor_inner.
-Print fifo_enq.
-
 Definition test_fifo_processor {var : type -> Type} {f : type -> type -> Type} :
   fns.fns var f
     (type.Pair (fifo1.State (type.Bits 8)) (type.Bits 8))

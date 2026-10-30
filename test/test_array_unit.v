@@ -1,5 +1,5 @@
 (*! sv:reject *)
-From Coq Require Import BinInt Bits String List.
+From Stdlib Require Import BinInt Bits String List.
 Require Import quartz.lang.Syntax. Import type.
 Import (notations) type expr eexpr.
 Local Open Scope string_scope.

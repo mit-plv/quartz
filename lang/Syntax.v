@@ -337,7 +337,7 @@ Module expr.
     | Get _ r i => typeWithHole.get (interp _ r) (interp _ i)
     | Unop op e1 => unop.interp op (interp _ e1)
     | Binop op e1 e2 => binop.interp op (interp _ e1) (interp _ e2)
-    | If e a b => if interp _ e : bool then interp _ a else interp _ b
+    | If e a b => if Zmod.nonzero (interp _ e) then interp _ a else interp _ b
     | Call f e1 => f (interp _ e1)
     end.
   Arguments interp {t} e.
@@ -379,10 +379,10 @@ Module expr.
     (in custom quartz_expr at level 0, x custom quartz_expr at level 200,
      y custom quartz_expr at level 200, z custom quartz_expr at level 200,
      format "( '[' x , '/' y , '/' .. , '/' z ']' )").
-  Notation "e1 * e2" := (expr.Binop binop.And e1 e2) (in custom quartz_expr at level 39, left associativity).
+  Notation "e1 * e2" := (expr.Binop binop.Mul e1 e2) (in custom quartz_expr at level 39, left associativity).
   Notation "e1 & e2" := (expr.Binop binop.And e1 e2) (in custom quartz_expr at level 40, left associativity).
   Notation "e1 + e2" := (expr.Binop binop.Add e1 e2) (in custom quartz_expr at level 50, left associativity).
-  Notation "e1 - e2" := (expr.Binop binop.Add e1 e2) (in custom quartz_expr at level 50, left associativity).
+  Notation "e1 - e2" := (expr.Binop binop.Sub e1 e2) (in custom quartz_expr at level 50, left associativity).
   Notation "e1 | e2" := (expr.Binop binop.Or e1 e2) (in custom quartz_expr at level 50, left associativity).
   Notation "e1 ^ e2" := (expr.Binop binop.Xor e1 e2) (in custom quartz_expr at level 45, left associativity).
   Notation "e1 << e2" := (expr.Binop binop.Slu e1 e2) (in custom quartz_expr at level 60, left associativity).
@@ -436,7 +436,7 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
     | Let _ a b => (* let x := expr.interp a in interp (b x) *)
                   LetBlock (expr.interp a) (fun x => interp (b x))
     | Bind _ a b => LetBlock (interp a) (fun x => interp ( b x))
-    | If e a b => if expr.interp e : bool then interp a else interp b
+    | If e a b => if Zmod.nonzero (expr.interp e) then interp a else interp b
     | Case e l r => match expr.interp e with inl v => interp (l v) | inr v => interp (r v) end
     | Upd i s v => typeWithHole.upd (expr.interp s) (expr.interp i) (fun _ => expr.interp v)
     end.
@@ -450,13 +450,13 @@ Module eexpr. (* extended expressions = purely functional "function" bodies *)
   Notation "'return' e" := (eexpr.Ret e)
     (in custom quartz_eexpr at level 200, e custom quartz_expr at level 200).
   Notation "'let' x ':=' a 'in' b" := (eexpr.Let (string_of_binder_name'' x) a (fun x => b))
-    (in custom quartz_eexpr at level 200, x name, a custom quartz_expr at level 200, b custom quartz_eexpr at level 200, right associativity).
+    (in custom quartz_eexpr at level 200, x name, a custom quartz_expr at level 200, b custom quartz_eexpr at level 200, right associativity, only parsing).
   Notation "'let' x : t ':=' a 'in' b" := (eexpr.Let (tx:=t) (string_of_binder_name'' x) a (fun x => b))
-    (in custom quartz_eexpr at level 200, x name, t constr at level 200, a custom quartz_expr at level 200, b custom quartz_eexpr at level 200, right associativity).
+    (in custom quartz_eexpr at level 200, x name, t constr at level 200, a custom quartz_expr at level 200, b custom quartz_eexpr at level 200, right associativity, only parsing).
   Notation "'let' x '<-' a 'in' b" := (eexpr.Bind (string_of_binder_name'' x) a (fun x => b))
-    (in custom quartz_eexpr at level 200, x name, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200, right associativity).
+    (in custom quartz_eexpr at level 200, x name, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200, right associativity, only parsing).
   Notation "'let' x : t '<-' a 'in' b" := (eexpr.Bind (tx := t) (string_of_binder_name'' x) a (fun x => b))
-    (in custom quartz_eexpr at level 200, x name, t constr at level 200, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200, right associativity).
+    (in custom quartz_eexpr at level 200, x name, t constr at level 200, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200, right associativity, only parsing).
   Notation "'if' cond 'then' a 'else' b" := (eexpr.If cond a b)
     (in custom quartz_eexpr at level 200, cond custom quartz_expr at level 200, a custom quartz_eexpr at level 200, b custom quartz_eexpr at level 200).
   Notation "'match' cond 'with' | 'left' l '=>' a | 'right' r '=>' b 'end'" := (eexpr.Case cond (fun l => a) (fun r => b))

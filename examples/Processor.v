@@ -39,7 +39,7 @@ Module QStdlib.
        return #s
      ))
    (in custom quartz_struct_init at level 0,
-    f global,
+    f global, only parsing,
     v custom quartz_expr at level 200).
   Notation "a ';' b" :=
    (fun s =>
@@ -316,7 +316,7 @@ Module rfScored.
     RfScored.isLocked := isLocked
   |}.
 
-  Coercion rep (v : state) : type.reify'' state :=
+  #[warnings="-uniform-inheritance"] Coercion rep (v : state) : type.reify'' state :=
     ltac2:(let t := &v in exact $t).
 
   (* TODO: vector access *)
@@ -389,7 +389,7 @@ Module bht. Section bht.
      return #st
   )).
 
-  Coercion rep (v : state) : type.reify'' state :=
+  #[warnings="-uniform-inheritance"] Coercion rep (v : state) : type.reify'' state :=
     ltac2:(let t := &v in exact $t).
 
   Definition impl {var} : @Bht var addrSz State := {|
