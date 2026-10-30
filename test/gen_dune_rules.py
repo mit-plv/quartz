@@ -67,7 +67,7 @@ def generate_rules_for_file(path):
     if sv_reject:
         print(f"""
  (alias test-sv)
- (action (with-accepted-exit-codes (not 0) (run ../../slang/build/bin/slang --quiet -Wno-missing-top {test_name}.sv --eval "{inner_func_name}(tt)"))))""")
+ (action (with-accepted-exit-codes (not 0) (with-stdout-to %{{null}} (with-stderr-to %{{null}} (run ../../slang/build/bin/slang --quiet -Wno-missing-top {test_name}.sv --eval "{inner_func_name}(tt)"))))))""")
     else:
         print(f"""
  (target {test_name}.sv_out)
@@ -81,7 +81,7 @@ def generate_rules_for_file(path):
  {f"(alias test-cpp)" if cpp_reject else f"(target {test_name}.exe)"}
  (action
   (with-accepted-exit-codes {f"(not 0)" if cpp_reject else f"0"}
-   (run clang++ -fsanitize=address,undefined -std=c++2b -fbracket-depth=1024 {test_name}.cpp {f"-fsyntax-only" if cpp_reject else f"-o %{{target}}"}))))
+   {f"(with-stderr-to %{{null}} " if cpp_reject else f""}(run clang++ -fsanitize=address,undefined -std=c++2b -fbracket-depth=1024 {test_name}.cpp {f"-fsyntax-only" if cpp_reject else f"-o %{{target}}"}){(")" if cpp_reject else "")})))
 """)
 
     if not cpp_reject:
