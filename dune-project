@@ -9,9 +9,7 @@
  (name quartz)
  (synopsis "")
  (depends 
-  (coq (>= 9.0))
+  (rocq-core (>= 9.0))
   (rocq-stdlib (>= 9.1.0))
  )
 )
-
-(warnings (deprecated_coq_lang_lt_08 disabled))

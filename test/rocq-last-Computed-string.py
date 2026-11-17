@@ -10,7 +10,7 @@ resource.setrlimit(resource.RLIMIT_STACK, (hard, hard))
 
 def main():
     proc = subprocess.run(
-        ["coqtop", *sys.argv[1:]],
+        ["rocq", "repl", *sys.argv[1:]],
         input=sys.stdin.read(),
         text=True,
         capture_output=True,
@@ -25,7 +25,7 @@ def main():
             sys.stderr.write(proc.stderr.replace("Rocq < ", ""))
         if not matches:
             sys.stderr.write(
-                "coqtop produced no result string; first bytes: "
+                "rocq repl produced no result string; first bytes: "
                 + proc.stdout[:2000]
                 + "\n"
             )

@@ -6,7 +6,6 @@ def generate_rules_for_file(path):
     src_path = os.path.splitext(path)[0]
     filename = os.path.basename(path)
     test_name = os.path.splitext(filename)[0]
-    inner_func_name = f"{test_name}_inner"
 
     cpp_reject = False
     sv_reject = False
@@ -37,41 +36,41 @@ def generate_rules_for_file(path):
 
 (rule
  (target {test_name}.out)
- (deps ../../lang/transform.vo {src_path}.vo ../../lang/pp.vo{deps_extra} ../coqtop-last-Computed-string.sh)
+ (deps ../../lang/transform.vo {src_path}.vo ../../lang/pp.vo{deps_extra} ../rocq-last-Computed-string.py)
  (action
   (with-stdout-to %{{target}}
    (pipe-stdout
     (echo "Require Import quartz.lang.pp quartz.lang.Syntax quartz.lang.transform quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute pp.bits (type.pack (fns.interp {test_name} (type.default _))).\\n")
-    (run ../coqtop-last-Computed-string.sh -q -quiet {coq_flags})))))
+    (run ../rocq-last-Computed-string.py -q -quiet {coq_flags})))))
 
 (rule
  (target {test_name}.sv)
- (deps ../../lang/sv.vo {src_path}.vo{deps_extra} ../coqtop-last-Computed-string.sh)
+ (deps ../../lang/sv.vo {src_path}.vo{deps_extra} ../rocq-last-Computed-string.py)
  (action
   (with-stdout-to %{{target}}
    (pipe-stdout
-    (echo "Require Import quartz.lang.Syntax quartz.lang.sv quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute sv.pp {test_name}.\\n")
-    (run ../coqtop-last-Computed-string.sh -q -quiet {coq_flags})))))
+    (echo "Require Import quartz.lang.Syntax quartz.lang.sv quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute sv.pp_test_driver {test_name}.\\n")
+    (run ../rocq-last-Computed-string.py -q -quiet {coq_flags})))))
 
 (rule
  (target {test_name}.cpp)
- (deps ../../lang/cpp.vo {src_path}.vo{deps_extra} ../coqtop-last-Computed-string.sh)
+ (deps ../../lang/cpp.vo {src_path}.vo{deps_extra} ../rocq-last-Computed-string.py)
  (action
   (with-stdout-to %{{target}}
    (pipe-stdout
     (echo "Require Import quartz.lang.Syntax quartz.lang.cpp quartz.test.{test_name}. Import Strings.String.\\nLocal Open Scope string_scope.\\nCompute cpp.pp_test_driver (ltac:(repeat (constructor || cbn || discriminate))) {test_name}.\\n")
-    (run ../coqtop-last-Computed-string.sh -q -quiet {coq_flags})))))
+    (run ../rocq-last-Computed-string.py -q -quiet {coq_flags})))))
 
 (rule
- (deps ../../slang/build/bin/slang {test_name}.sv)""")
+ (deps {test_name}.sv)""")
     if sv_reject:
         print(f"""
  (alias test-sv)
- (action (with-accepted-exit-codes (not 0) (with-stdout-to %{{null}} (with-stderr-to %{{null}} (run ../../slang/build/bin/slang --quiet -Wno-missing-top {test_name}.sv --eval "{inner_func_name}(tt)"))))))""")
+ (action (with-accepted-exit-codes (not 0) (with-stdout-to %{{null}} (with-stderr-to %{{null}} (run %{{bin:slang}} --quiet -Wno-index-oob {test_name}.sv))))))""")
     else:
         print(f"""
  (target {test_name}.sv_out)
- (action (with-stdout-to %{{target}} (run ../../slang/build/bin/slang --quiet -Wno-missing-top {test_name}.sv --eval "{inner_func_name}(tt)"))))
+ (action (with-stdout-to %{{target}} (run %{{dep:../slang-info.py}} %{{bin:slang}} -Wno-index-oob {test_name}.sv))))
 
 (rule (alias test-sv) (deps {test_name}.out {test_name}.sv_out) (action (diff {test_name}.out {test_name}.sv_out)))""")
 

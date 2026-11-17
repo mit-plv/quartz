@@ -140,4 +140,10 @@ Module pp.
     name ++ "__" ++ (if match fields_str with "" => true | _ => false end then "" else fields_str ++ "_") ++ n_fields ++ "S".
 
   Definition topsort := fold_right insert_type [].
+
+  Fixpoint get_ret_fname {a b} (fs : @fns.fns var fn a b) : string :=
+    match fs with
+    | fns.Let _ _ _ C => get_ret_fname (C "")
+    | fns.Ret fname _ _ => fname
+    end.
 End pp.

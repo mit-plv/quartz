@@ -9,6 +9,6 @@ dune build
 ## Test
 
 ```
-cmake --version && ninja --version && c++ --version && ./get-slang.sh
+slang --version && clang++ --version
 dune test
 ```

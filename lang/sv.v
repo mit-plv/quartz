@@ -290,4 +290,7 @@ endclass"++LF++LF++
   Definition pp {a b} fns :=
     (match b with type.Unit => "`error ""top-level return type cannot be unit"" " ++ LF | _ => "" end) ++
     @ppRaw a b (fns.rmap (fun _ e => expr.unresizesame (expr.unapp0l (expr.unapp0r e))) (fun _ => id) (fun a b => id) fns).
+  Definition pp_test_driver {a b} (fs : @fns.fns var fn a b) : string :=
+    let f := pp.get_ret_fname fs ++ "(tt)" in
+    pp fs ++ LF ++ "module __quartz_test; $info(""%0d'h%0h"", $bits(" ++ f ++ "), " ++ f ++ "); endmodule" ++ LF.
 End sv.

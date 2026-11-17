@@ -284,14 +284,8 @@ unsigned _BitInt(N) srs(signed _BitInt(N) a, unsigned _BitInt(N) b) {
     | fns.Ret fh ah f => fns.Ret fh ah (fun va => eexpr.Bind "res" (f va) (fun vb => eexpr.pack W (expr.Var vb)))
     end.
 
-  Fixpoint get_ret_fname {a b} (fs : @fns.fns var fn a b) : string :=
-    match fs with
-    | fns.Let _ _ _ C => get_ret_fname (C "")
-    | fns.Ret fname _ _ => fname
-    end.
-
   Definition pp_test_driver {a b} (W : type.wf b) (fs : @fns.fns var fn a b) : string :=
-    let fname := get_ret_fname fs in
+    let fname := pp.get_ret_fname fs in
     pp (wrap_pack W fs) ++ LF ++
     "#include <iostream>" ++ LF ++
     "void print_hex(unit x) { std::cout << ""0'h0\n""; return; }" ++ LF ++
